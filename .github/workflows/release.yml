@@ -1,0 +1,110 @@
+name: release
+
+# Tag-driven. The tag is the trigger AND the source of truth for the version:
+# `check` refuses to build if Cargo.toml disagrees with the tag, so a release can
+# never ship a binary that reports a different version than the tag it came from.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  # Fewer, denser progress lines and no incremental artifacts worth caching in CI.
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag must equal Cargo.toml version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest="$(sed -n 's/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)"
+          echo "tag=$tag manifest=$manifest"
+          if [ "$tag" != "$manifest" ]; then
+            echo "::error::tag v$tag does not match Cargo.toml version $manifest — bump one of them"
+            exit 1
+          fi
+
+  build:
+    needs: check
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: amd64
+          - target: aarch64-unknown-linux-gnu
+            arch: arm64
+            # Cross-linking aarch64 from an amd64 runner is far cheaper than
+            # waiting on an arm64 runner, and this crate is pure Rust so there
+            # is no C toolchain to satisfy beyond the linker itself.
+            linker: aarch64-linux-gnu-gcc
+            apt: gcc-aarch64-linux-gnu
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup target add ${{ matrix.target }}
+
+      - name: Cross linker
+        if: matrix.apt != ''
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.apt }}
+
+      # Keyed on target so the two matrix legs never evict each other, and on
+      # Cargo.lock so a dependency bump is the only thing that cold-starts it.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+          cache-on-failure: true
+
+      - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.linker }}
+        run: cargo build --release --locked --bin ontosys --target ${{ matrix.target }}
+
+      - name: Stage single binary
+        run: |
+          install -m 0755 target/${{ matrix.target }}/release/ontosys ontosys-linux-${{ matrix.arch }}
+          ls -l ontosys-linux-${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ontosys-linux-${{ matrix.arch }}
+          path: ontosys-linux-${{ matrix.arch }}
+          retention-days: 1
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      # Collected in one job rather than uploaded from each matrix leg, so two
+      # concurrent legs cannot race to create the same release.
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          chmod +x ontosys-linux-*
+          sha256sum ontosys-linux-* | tee SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ontosys-linux-amd64
+            ontosys-linux-arm64
+            SHA256SUMS
+          fail_on_unmatched_files: true
+          generate_release_notes: true
