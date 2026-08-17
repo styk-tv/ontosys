@@ -1,6 +1,7 @@
 # Rust/Cargo
 target/
-Cargo.lock
+# Cargo.lock IS committed: this crate ships a binary, so the lockfile pins the
+# exact release build and doubles as the CI cache key. Only library crates omit it.
 *.rlib
 *.rmeta
 *.so

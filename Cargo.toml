@@ -1,0 +1,77 @@
+[package]
+name = "ontosys"
+version = "0.1.0"
+edition = "2021"
+description = "Multi-language code knowledge graph system - extracts semantic information from repositories into RDF"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/styk-tv/ontosys"
+keywords = ["rdf", "knowledge-graph", "ast", "code-analysis", "ontology"]
+categories = ["development-tools", "command-line-utilities"]
+
+[[bin]]
+name = "ontosys"
+path = "src/main.rs"
+
+[dependencies]
+# NOTE: parsing is currently line-based (see src/parser/), and RDF is emitted by
+# hand (see src/ontology/triples.rs). The oxigraph / rio_* / tree-sitter crates
+# were declared but never imported, so they are not listed here — they cost build
+# time (tree-sitter compiles C) without contributing a symbol. Re-add the specific
+# crate in the same commit that first uses it.
+
+# CLI
+clap = { version = "4.5", features = ["derive", "env"] }
+indicatif = "0.17"
+console = "0.15"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Utilities
+walkdir = "2.5"
+open = "5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = "0.4"
+rayon = "1.10"
+
+# Type-level programming utilities
+frunk = "0.4"
+static_assertions = "1.1"
+
+# Web server for visualization
+axum = "0.7"
+tower-http = { version = "0.6", features = ["fs", "cors"] }
+
+[dev-dependencies]
+tempfile = "3.14"
+pretty_assertions = "1.4"
+
+[features]
+default = []
+
+# Tuned for a small single-file release binary that still builds fast in CI.
+# `lto = "thin"` is deliberate: full LTO shrinks a little more but serializes the
+# link step, and `codegen-units = 1` would trade most of the parallelism that
+# keeps a warm CI build in the seconds range.
+[profile.release]
+strip = true
+lto = "thin"
+panic = "abort"
+
+[[example]]
+name = "ingest_repo"
+path = "examples/ingest_repo.rs"
+
+[[example]]
+name = "type_state_demo"
+path = "examples/type_state_demo.rs"
