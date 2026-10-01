@@ -52,6 +52,8 @@
 
 pub mod capabilities;
 pub mod graph;
+pub mod grounding;
+pub mod lang_c;
 pub mod log;
 pub mod ontology;
 pub mod parser;

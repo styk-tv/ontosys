@@ -110,6 +110,61 @@ pub const DATA: Namespace = Namespace::new(
     "data",
 );
 
+/// C language constructs extracted from a tree-sitter syntax tree
+pub const CX: Namespace = Namespace::new(
+    "https://ontosys.io/ns/c#",
+    "cx",
+);
+
+/// PostgreSQL domain ontology (subsystems, catalogs, settings, error states, ...)
+pub const PG: Namespace = Namespace::new(
+    "https://ontosys.io/ns/pg#",
+    "pg",
+);
+
+/// PostgreSQL catalog columns as properties of bootstrap catalog rows
+pub const PGCAT: Namespace = Namespace::new(
+    "https://ontosys.io/ns/pgcat#",
+    "pgcat",
+);
+
+/// Base for version-independent instance IRIs.
+///
+/// Instance IRIs are built from the project name and a repository-relative
+/// path or natural key only — never from the checkout directory, a counter, or
+/// processing order — so two builds of the same project (e.g. two release tags
+/// in two worktrees) name the same entity identically and can be diffed.
+pub fn instance_iri(project: &str, kind: &str, key: &str) -> Iri {
+    Iri::new(format!(
+        "https://ontosys.io/id/{}/{}/{}",
+        iri_segment(project),
+        kind,
+        iri_segment(key)
+    ))
+}
+
+/// Percent-encode everything outside a conservative IRI-safe set.
+///
+/// `/` is kept so repository paths stay readable; `%` is always encoded so the
+/// mapping is reversible. Operator names such as `<>` or `|/` would otherwise
+/// produce an invalid N-Triples IRIREF.
+pub fn iri_segment(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        let keep = b.is_ascii_alphanumeric()
+            || matches!(b, b'-' | b'.' | b'_' | b'~' | b'/' | b':' | b'(' | b')' | b',' | b'@' | b'!' | b'$' | b'*' | b'+' | b';' | b'=');
+        if keep {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{:02X}", b));
+        }
+    }
+    out
+}
+
+/// Every namespace the serializers know a prefix for.
+pub const ALL_PREFIXES: &[&Namespace] = &[&RDF, &RDFS, &OWL, &XSD, &DC, &DCT, &PROV, &DOAP, &CO, &CODE, &DATA, &CX, &PG, &PGCAT];
+
 // ============================================================================
 // COMMON IRIs
 // ============================================================================

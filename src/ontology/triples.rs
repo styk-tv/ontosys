@@ -99,31 +99,83 @@ impl TripleSet {
         self.triples
     }
 
-    /// Serialize to N-Triples format
-    pub fn to_ntriples(&self) -> String {
-        self.triples
-            .iter()
-            .map(|t| t.to_ntriples())
-            .collect::<Vec<_>>()
-            .join("\n")
+    /// Put the set into canonical form: sorted by N-Triples line, duplicates removed.
+    ///
+    /// Output order otherwise depends on parallel parse order; canonical order makes
+    /// two builds of identical sources byte-identical, which the diff relies on.
+    pub fn canonicalize(&mut self) {
+        let mut keyed: Vec<(String, Triple)> = std::mem::take(&mut self.triples)
+            .into_iter()
+            .map(|t| (t.to_ntriples(), t))
+            .collect();
+        keyed.sort_by(|a, b| a.0.cmp(&b.0));
+        keyed.dedup_by(|a, b| a.0 == b.0);
+        self.triples = keyed.into_iter().map(|(_, t)| t).collect();
     }
 
-    /// Serialize to Turtle format with prefixes
-    pub fn to_turtle(&self) -> String {
-        let prefixes = r#"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
-@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix owl: <http://www.w3.org/2002/07/owl#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-@prefix dc: <http://purl.org/dc/elements/1.1/> .
-@prefix dct: <http://purl.org/dc/terms/> .
-@prefix prov: <http://www.w3.org/ns/prov#> .
-@prefix doap: <http://usefulinc.com/ns/doap#> .
-@prefix co: <http://codeontology.org/ontology/> .
-@prefix code: <http://example.org/code/> .
-@prefix data: <http://example.org/data/> .
+    /// Serialize to N-Triples format
+    pub fn to_ntriples(&self) -> String {
+        let mut out = String::with_capacity(self.triples.len() * 160);
+        for t in &self.triples {
+            out.push_str(&t.to_ntriples());
+            out.push('\n');
+        }
+        out
+    }
 
-"#;
-        format!("{}{}", prefixes, self.to_ntriples())
+    /// Serialize to Turtle: prefixed predicates/classes, statements grouped by subject.
+    pub fn to_turtle(&self) -> String {
+        use super::namespaces::ALL_PREFIXES;
+        let mut out = String::with_capacity(self.triples.len() * 90);
+        for ns in ALL_PREFIXES {
+            out.push_str(&format!("@prefix {}: <{}> .\n", ns.short(), ns.prefix()));
+        }
+        out.push('\n');
+
+        let compact = |iri: &super::Iri| -> String {
+            let s = iri.as_str();
+            for ns in ALL_PREFIXES {
+                if let Some(local) = s.strip_prefix(ns.prefix()) {
+                    let simple = !local.is_empty()
+                        && local.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+                        && local.chars().next().map_or(false, |c| c.is_ascii_alphabetic() || c == '_');
+                    if simple {
+                        return format!("{}:{}", ns.short(), local);
+                    }
+                }
+            }
+            format!("<{}>", s)
+        };
+        let term = |t: &Term| -> String {
+            match t {
+                Term::Iri(i) => compact(i),
+                Term::BlankNode(b) => format!("_:{}", b),
+                Term::Literal(l) => l.to_string(),
+            }
+        };
+
+        let mut i = 0;
+        while i < self.triples.len() {
+            let subj = &self.triples[i].subject;
+            out.push_str(&term(subj));
+            let mut first = true;
+            while i < self.triples.len() && &self.triples[i].subject == subj {
+                let t = &self.triples[i];
+                let pred = if t.predicate.as_str() == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" {
+                    "a".to_string()
+                } else {
+                    compact(&t.predicate)
+                };
+                out.push_str(if first { "\n    " } else { " ;\n    " });
+                out.push_str(&pred);
+                out.push(' ');
+                out.push_str(&term(&t.object));
+                first = false;
+                i += 1;
+            }
+            out.push_str(" .\n\n");
+        }
+        out
     }
 }
 

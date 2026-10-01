@@ -20,6 +20,8 @@
 
 mod capabilities;
 mod graph;
+mod grounding;
+mod lang_c;
 mod log;
 mod ontology;
 mod parser;
@@ -115,6 +117,23 @@ enum Commands {
         debounce: u64,
     },
 
+    /// Semantic diff of two builds (repository paths or graph.nt files)
+    Diff {
+        /// Old build: a repository with .ontosys/, or a graph.nt file
+        old: PathBuf,
+
+        /// New build: a repository with .ontosys/, or a graph.nt file
+        new: PathBuf,
+
+        /// Markdown report path (default: ontosys-diff-<old>-<new>.md)
+        #[arg(short, long)]
+        out: Option<PathBuf>,
+
+        /// Also write the entity-level changes as JSON
+        #[arg(long)]
+        json: Option<PathBuf>,
+    },
+
     /// Clean the .ontosys folder
     Clean {
         /// Remove everything including configuration
@@ -162,6 +181,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Watch { debounce } => {
             cli::watch::run(&repo_path, debounce).await
+        }
+        Commands::Diff { old, new, out, json } => {
+            cli::diff::run(&old, &new, out, json).await
         }
         Commands::Clean { all } => {
             cli::clean::run(&repo_path, all).await

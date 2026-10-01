@@ -66,16 +66,21 @@ pub async fn run(repo_path: &Path, force: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn create_config(ontosys_path: &Path, _git_root: &Path) -> anyhow::Result<()> {
+fn create_config(ontosys_path: &Path, git_root: &Path) -> anyhow::Result<()> {
+    let mut languages = vec![
+        "rust".to_string(),
+        "python".to_string(),
+        "typescript".to_string(),
+        "javascript".to_string(),
+    ];
+    if has_c_sources(git_root) {
+        languages.push("c".to_string());
+    }
     let config = Config {
         version: "0.1.0".to_string(),
         created: chrono::Utc::now().to_rfc3339(),
-        languages: vec![
-            "rust".to_string(),
-            "python".to_string(),
-            "typescript".to_string(),
-            "javascript".to_string(),
-        ],
+        project: None,
+        languages,
         exclude_patterns: vec![
             "**/node_modules/**".to_string(),
             "**/target/**".to_string(),
@@ -104,10 +109,22 @@ cache/
     Ok(())
 }
 
+/// True when the repository contains at least one `.c` file.
+fn has_c_sources(root: &Path) -> bool {
+    walkdir::WalkDir::new(root)
+        .into_iter()
+        .filter_entry(|e| !matches!(e.file_name().to_str(), Some(".git" | "target" | "node_modules" | ".ontosys")))
+        .filter_map(|e| e.ok())
+        .any(|e| e.file_type().is_file() && e.path().extension().map_or(false, |x| x == "c"))
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Config {
     pub version: String,
     pub created: String,
+    /// Stable project name for instance IRIs (see `project_name`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
     pub languages: Vec<String>,
     pub exclude_patterns: Vec<String>,
     pub include_private: bool,

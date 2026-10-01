@@ -35,7 +35,7 @@ use std::fmt;
 // ============================================================================
 
 /// A validated IRI for RDF subjects, predicates, or objects.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Iri(String);
 
 impl Iri {
@@ -113,15 +113,38 @@ impl Literal {
 impl fmt::Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Literal::String(s) => write!(f, "\"{}\"", s.replace('"', "\\\"")),
+            Literal::String(s) => write!(f, "\"{}\"", escape_literal(s)),
             Literal::LangString { value, lang } => {
-                write!(f, "\"{}\"@{}", value.replace('"', "\\\""), lang)
+                write!(f, "\"{}\"@{}", escape_literal(value), lang)
             }
             Literal::Typed { value, datatype } => {
-                write!(f, "\"{}\"^^{}", value.replace('"', "\\\""), datatype)
+                write!(f, "\"{}\"^^{}", escape_literal(value), datatype)
             }
         }
     }
+}
+
+/// Escape a lexical form per the N-Triples `STRING_LITERAL_QUOTE` production.
+///
+/// Backslash must be escaped first; C sources routinely carry `\n`, `\\` and
+/// raw control characters in string literals and comments, and an unescaped
+/// one makes the whole `.nt` file unparseable.
+pub fn escape_literal(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 || c as u32 == 0x7f => {
+                out.push_str(&format!("\\u{:04X}", c as u32))
+            }
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 // ============================================================================

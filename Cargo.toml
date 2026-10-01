@@ -14,11 +14,10 @@ name = "ontosys"
 path = "src/main.rs"
 
 [dependencies]
-# NOTE: parsing is currently line-based (see src/parser/), and RDF is emitted by
-# hand (see src/ontology/triples.rs). The oxigraph / rio_* / tree-sitter crates
-# were declared but never imported, so they are not listed here — they cost build
-# time (tree-sitter compiles C) without contributing a symbol. Re-add the specific
-# crate in the same commit that first uses it.
+# NOTE: C is parsed with tree-sitter (src/lang_c/); Rust/Python/TypeScript are
+# still line-based (src/parser/). RDF is emitted by hand (src/ontology/triples.rs).
+# The oxigraph / rio_* crates were declared but never imported, so they are not
+# listed — re-add a crate in the same commit that first uses it.
 
 # CLI
 clap = { version = "4.5", features = ["derive", "env"] }
@@ -51,6 +50,10 @@ static_assertions = "1.1"
 # Web server for visualization
 axum = "0.7"
 tower-http = { version = "0.6", features = ["fs", "cors"] }
+# C syntax trees (src/lang_c/) and project grounding sources (src/grounding/)
+tree-sitter = "0.27.0"
+tree-sitter-c = "0.24.2"
+regex = "1.13.1"
 
 [dev-dependencies]
 tempfile = "3.14"

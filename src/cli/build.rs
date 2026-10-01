@@ -9,6 +9,8 @@ use crate::parser::markdown_parser::parse_markdown;
 use crate::graph::GraphBuilder;
 use crate::graph::docs_builder::DocsBuilder;
 use crate::ontology::TripleSet;
+use crate::grounding::{postgres, vocab};
+use crate::lang_c::{self, CFile};
 use std::path::Path;
 use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -72,9 +74,15 @@ pub async fn run(
 
     println!("  Found {} files to process\n", style(files.len()).cyan());
 
+    // C goes through tree-sitter; the other languages through their own parsers.
+    let (c_paths, files): (Vec<_>, Vec<_>) = files.into_iter().partition(|p| {
+        matches!(p.extension().and_then(|e| e.to_str()), Some("c" | "h"))
+    });
+    let postgres_tree = !c_paths.is_empty() && postgres::detect(&git_root);
+
     // Setup progress tracking
     let multi_progress = MultiProgress::new();
-    let overall_pb = multi_progress.add(ProgressBar::new(files.len() as u64));
+    let overall_pb = multi_progress.add(ProgressBar::new((files.len() + c_paths.len()) as u64));
     overall_pb.set_style(
         ProgressStyle::default_bar()
             .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} files ({eta})")
@@ -118,18 +126,42 @@ pub async fn run(
         overall_pb.inc(1);
     });
 
+    let prepass: Option<lang_c::Prepass> = if postgres_tree { Some(postgres::prepass) } else { None };
+    let mut c_files: Vec<CFile> = c_paths
+        .par_iter()
+        .map_init(lang_c::new_parser, |parser, path| {
+            let raw = fs::read(path).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
+            let rel = path.strip_prefix(&git_root).unwrap_or(path).to_string_lossy().replace('\\', "/");
+            let f = lang_c::extract(parser, &rel, &raw, prepass);
+            overall_pb.inc(1);
+            f
+        })
+        .collect();
+    c_files.sort_by(|a, b| a.path.cmp(&b.path));
+
     overall_pb.finish_with_message("Parsing complete");
     println!();
 
-    let nodes = Arc::try_unwrap(all_nodes)
+    let mut nodes = Arc::try_unwrap(all_nodes)
         .unwrap()
         .into_inner()
         .unwrap();
+    // Parallel collection order is arbitrary; sort so output does not depend on it.
+    nodes.sort_by(|a, b| a.0.cmp(&b.0));
 
     let parsed_count = success_count.load(Ordering::Relaxed);
     let errors = error_count.load(Ordering::Relaxed);
 
-    println!("  {} Parsed: {} files", style("✓").green(), parsed_count);
+    println!("  {} Parsed: {} files", style("✓").green(), parsed_count + c_files.len());
+    let c_functions: usize = c_files.iter().map(|f| f.functions.len()).sum();
+    let c_errors: usize = c_files.iter().map(|f| f.parse_errors).sum();
+    let c_clean = c_files.iter().filter(|f| f.parse_errors == 0).count();
+    if !c_files.is_empty() {
+        println!(
+            "  {} C (tree-sitter): {} files, {} functions; {} files parse cleanly, {} error nodes in the rest",
+            style("✓").green(), c_files.len(), c_functions, c_clean, c_errors
+        );
+    }
     if errors > 0 {
         println!("  {} Errors: {} files", style("⚠").yellow(), errors);
     }
@@ -145,10 +177,9 @@ pub async fn run(
     );
     build_pb.set_message("Generating RDF triples...");
 
-    let project_id = git_root
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("project");
+    let project_name = project_name(&git_root, config.project.as_deref());
+    let project_id = project_name.as_str();
+    info(&format!("Project: {}", project_id));
 
     let builder = GraphBuilder::new(project_id);
 
@@ -157,13 +188,32 @@ pub async fn run(
         .flat_map(|(_, n)| n.clone())
         .collect();
 
-    let triples = builder.build_from_ast(&all_ast_nodes)?;
+    let mut triples = builder.build_from_ast(&all_ast_nodes)?;
+
+    let mut grounding_stats = None;
+    if !c_files.is_empty() {
+        let ix = lang_c::rdf::index(project_id, &c_files);
+        lang_c::rdf::to_triples(project_id, &c_files, &ix, &mut triples);
+        vocab::emit(&mut triples);
+        if postgres_tree {
+            build_pb.set_message("Grounding in PostgreSQL sources...");
+            grounding_stats = Some(postgres::ground(project_id, &git_root, &c_files, &ix, &mut triples)?);
+        }
+    }
+    triples.canonicalize();
 
     build_pb.finish_with_message("Graph built");
     println!();
 
     println!("  Generated {} RDF triples", style(triples.len()).cyan());
     println!();
+    if let Some(stats) = &grounding_stats {
+        info("PostgreSQL grounding:");
+        for (k, v) in stats {
+            println!("    {:<40} {}", k, style(v).cyan());
+        }
+        println!();
+    }
 
     // Save outputs
     info("Saving outputs...");
@@ -185,14 +235,22 @@ pub async fn run(
         fs::metadata(&nt_path)?.len()
     );
 
-    // Save as JSON-LD (for visualization)
-    let jsonld = triples_to_jsonld(&triples, project_id);
+    // Save as JSON-LD (for visualization). The browser view cannot usefully
+    // render millions of edges, so very large graphs skip it rather than ship a
+    // file nobody can open; a stale one from an earlier build is removed.
     let json_path = data_path.join("graph.json");
-    fs::write(&json_path, serde_json::to_string_pretty(&jsonld)?)?;
-    println!("  {} graph.json ({} bytes)",
-        style("→").dim(),
-        fs::metadata(&json_path)?.len()
-    );
+    if triples.len() <= MAX_VIZ_TRIPLES {
+        let jsonld = triples_to_jsonld(&triples, project_id);
+        fs::write(&json_path, serde_json::to_string_pretty(&jsonld)?)?;
+        println!("  {} graph.json ({} bytes)",
+            style("→").dim(),
+            fs::metadata(&json_path)?.len()
+        );
+    } else {
+        let _ = fs::remove_file(&json_path);
+        println!("  {} graph.json skipped ({} triples > {} visualization limit)",
+            style("→").dim(), triples.len(), MAX_VIZ_TRIPLES);
+    }
 
     // Extract docs metadata if enabled
     let extract_docs = config.extract_docs;
@@ -263,6 +321,11 @@ pub async fn run(
     // Save build metadata
     let metadata = BuildMetadata {
         timestamp: chrono::Utc::now().to_rfc3339(),
+        project: project_id.to_string(),
+        c_files: c_files.len(),
+        c_functions,
+        c_parse_error_nodes: c_errors,
+        grounding: grounding_stats,
         files_processed: parsed_count,
         files_failed: errors,
         triples_generated: triples.len(),
@@ -368,9 +431,18 @@ fn process_file(
     parser.parse_file(path, &source).map_err(|e| anyhow::anyhow!("{}", e))
 }
 
+/// Above this many triples graph.json (browser visualization) is not written.
+const MAX_VIZ_TRIPLES: usize = 250_000;
+
 #[derive(serde::Serialize)]
 struct BuildMetadata {
     timestamp: String,
+    project: String,
+    c_files: usize,
+    c_functions: usize,
+    c_parse_error_nodes: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    grounding: Option<std::collections::BTreeMap<String, usize>>,
     files_processed: usize,
     files_failed: usize,
     triples_generated: usize,

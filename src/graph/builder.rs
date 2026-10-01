@@ -385,7 +385,13 @@ impl GraphBuilder {
     }
 
     fn process_impl(&mut self, node: &ImplNode, parent_iri: &Iri) -> Result<(), PipelineError> {
-        let impl_id = self.blank_node();
+        // Named by what it implements, not by a processing-order counter, so the
+        // IRI is stable across builds.
+        let impl_id = iri_segment(&format!(
+            "{}-for-{}",
+            node.trait_name.as_deref().unwrap_or("inherent"),
+            node.self_type.as_deref().unwrap_or("unknown")
+        ));
         let impl_iri = Iri::new(format!("{}/impl/{}", parent_iri.as_str(), impl_id));
 
         // Type triple
@@ -525,8 +531,8 @@ impl GraphBuilder {
         self.add_generics(&func_iri, &node.generics);
 
         // Process parameters
-        for param in &node.parameters {
-            self.process_parameter(param, &func_iri)?;
+        for (index, param) in node.parameters.iter().enumerate() {
+            self.process_parameter(param, index, &func_iri)?;
         }
 
         // Process function calls (call graph)
@@ -556,9 +562,9 @@ impl GraphBuilder {
         Ok(())
     }
 
-    fn process_parameter(&mut self, param: &ParameterNode, func_iri: &Iri) -> Result<(), PipelineError> {
-        let param_id = self.blank_node();
-        let param_iri = Iri::new(format!("{}/param/{}", func_iri.as_str(), param_id));
+    fn process_parameter(&mut self, param: &ParameterNode, index: usize, func_iri: &Iri) -> Result<(), PipelineError> {
+        // Positional: the same signature yields the same IRIs in every build.
+        let param_iri = Iri::new(format!("{}/param/{}", func_iri.as_str(), index));
 
         // Type triple
         self.triples.add(Triple::new(
