@@ -31,3 +31,10 @@ build/
 # Environment
 .env
 .env.local
+
+# Fleet spec discipline (pgCK / sporaxis convention): SPEC* documents are
+# private working papers and may carry local paths — never tracked.
+SPEC*
+# The docs layer embeds every .md verbatim (SPEC* included) into
+# .ontosys/data/docs.json, so the graph output stays untracked too.
+.ontosys/

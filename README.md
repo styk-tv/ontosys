@@ -4,7 +4,7 @@ A multi-language code knowledge graph system that extracts semantic information 
 
 ## Features
 
-- **Multi-Language Support**: Rust, Python, TypeScript, JavaScript
+- **Multi-Language Support**: Rust, Python, TypeScript, JavaScript, plus a Markdown docs layer
 - **Formal Ontologies**: Based on CodeOntology with BFO 2020 foundations
 - **Type-Safe Pipeline**: Compile-time guarantees via type-state pattern
 - **Interactive Visualization**: Full-screen graph browser with filtering
@@ -84,6 +84,7 @@ ontosys stats
 │   ├── graph.ttl     # RDF in Turtle format
 │   ├── graph.nt      # RDF in N-Triples format
 │   ├── graph.json    # JSON-LD for visualization
+│   ├── docs.json     # Comments + markdown docs metadata
 │   └── build-meta.json
 ├── cache/            # Parsed AST cache
 ├── exports/          # Exported files
@@ -92,12 +93,19 @@ ontosys stats
 
 ## Supported Languages
 
-| Language | Extensions | Parser |
-|----------|-----------|--------|
-| Rust | `.rs` | Full support |
-| Python | `.py` | Full support |
-| TypeScript | `.ts`, `.tsx` | Full support |
-| JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` | Full support |
+| Language | Extensions | Extraction |
+|----------|-----------|------------|
+| Rust | `.rs` | Declarations (line-based) |
+| Python | `.py` | Declarations (line-based) |
+| TypeScript | `.ts`, `.tsx` | Declarations (line-based) |
+| JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` | Declarations (line-based) |
+| Markdown | `.md` | Docs layer: ATX-heading outline + verbatim content into `docs.json` |
+
+Parsing is line-based heuristic extraction of declarations (functions,
+structs/classes, traits, enums, imports, …) with source locations — not a
+full syntax tree. Tree-sitter was evaluated and deliberately dropped (see the
+note in `Cargo.toml`); re-adding a real parser happens in the same commit
+that first uses it.
 
 ## Ontology Mappings
 
