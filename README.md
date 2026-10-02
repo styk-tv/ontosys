@@ -299,7 +299,18 @@ its delta — the same computation `ontosys diff` reports.
   functions, … — every row clickable.
 - **Delta**: added / removed / changed per kind, browsable lists.
 - **SPARQL**: any read-only query, with examples; IRIs in results are links.
+- **View**: *all* (everything drawn so far; the settled layout stays frozen so
+  selecting never moves the picture), *trail* (only the selections you walked
+  through plus the current neighbourhood) or *focus* (only the current
+  selection and its neighbours, laid out for reading). The choice is
+  remembered; *Relayout* recomputes the layout on demand.
 - Light / medium / dark themes (medium by default).
+
+The browser only ever talks to the `serve` API; it never reads graph files or
+a database directly. The store behind the API is embedded Oxigraph — pure
+Rust, in memory, built without RocksDB, so no C++ toolchain is involved. A
+pgRDF-backed store (querying a pgRDF database through the same API) is the
+planned second backend.
 
 HTTP API (JSON): `/api/info`, `/api/view`, `/api/node?iri=`,
 `/api/links?iri=&p=&dir=`, `/api/search?q=`, `/api/aggregates`, `/api/delta`,

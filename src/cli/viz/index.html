@@ -124,15 +124,16 @@ svg#graph { width: 100%; height: 100%; display: block; }
 .link.removed { stroke: var(--removed); stroke-dasharray: 3 3; }
 .link.added { stroke: var(--added); }
 .link.hl { stroke: var(--accent); stroke-opacity: 1; stroke-width: 1.6; }
-.node circle { stroke: var(--stroke); stroke-width: 1; cursor: pointer; }
-.node.removed circle { fill-opacity: .45; }
-.delta-on .node.st-added circle { stroke: var(--added); stroke-width: 3; }
-.delta-on .node.st-removed circle { stroke: var(--removed); stroke-width: 3; stroke-dasharray: 2 1; }
-.delta-on .node.st-changed circle { stroke: var(--changed); stroke-width: 3; }
-.delta-on .node.st-moved circle { stroke: var(--moved); stroke-width: 3; }
-.delta-only .node.st-unchanged { opacity: .12; }
-.delta-only .link.unchanged { opacity: .1; }
-.node.sel circle { stroke: var(--accent); stroke-width: 3.5; }
+.node circle.v { stroke: var(--stroke); stroke-width: 1; pointer-events: none; }
+.node circle.hit { fill: transparent; stroke: none; cursor: pointer; }
+.node.removed circle.v { fill-opacity: .45; }
+.delta-on .node.st-added circle.v { stroke: var(--added); stroke-width: 3; }
+.delta-on .node.st-removed circle.v { stroke: var(--removed); stroke-width: 3; stroke-dasharray: 2 1; }
+.delta-on .node.st-changed circle.v { stroke: var(--changed); stroke-width: 3; }
+.delta-on .node.st-moved circle.v { stroke: var(--moved); stroke-width: 3; }
+.delta-only .node.st-unchanged:not(.sel):not(.pin) { opacity: .12; }
+.delta-only .link:not(.hl):not(.added):not(.removed) { opacity: .1; }
+.node.sel circle.v { stroke: var(--accent) !important; stroke-width: 4 !important; stroke-dasharray: none !important; }
 .node text { font-size: 9px; fill: var(--text); pointer-events: none; display: none;
   paint-order: stroke; stroke: var(--canvas); stroke-width: 3px; }
 .labels-all .node text, .labels-auto.zoomed .node text, .labels-auto .node.pin text, .labels-all .node.pin text { display: block; }
@@ -185,10 +186,11 @@ svg#graph { width: 100%; height: 100%; display: block; }
   <svg id="graph"></svg>
   <div id="mode"></div>
   <div id="toolbar">
+    <div class="seg" id="viewmode"><button data-v="all" title="Everything drawn so far">View: all</button><button data-v="trail" title="Only the selections you walked through, plus the current one's neighbours">trail</button><button data-v="focus" title="Only the current selection and its neighbours">focus</button></div>
     <div class="seg" id="theme"><button data-v="light">Light</button><button data-v="medium">Medium</button><button data-v="dark">Dark</button></div>
     <div class="seg" id="labels"><button data-v="auto">Labels: auto</button><button data-v="all">all</button><button data-v="none">off</button></div>
     <div class="seg" id="deltaseg" style="display:none"><button data-v="on" title="Colour nodes by their change">Delta</button><button data-v="only" title="Dim unchanged nodes">Changed only</button></div>
-    <div class="seg"><button id="fit">Fit</button><button id="clearx" title="Remove nodes added by exploring">Reset</button></div>
+    <div class="seg"><button id="fit">Fit</button><button id="relayout" title="Recompute the layout of what is drawn">Relayout</button><button id="clearx" title="Remove nodes added by exploring">Reset</button></div>
   </div>
   <div id="legend"></div>
   <div id="tip"></div>
@@ -221,6 +223,7 @@ const statusDot = s => s && s !== 'unchanged' ? `<span class="status ${s}">${s}<
 
 // ---------------------------------------------------------------- state
 const S = { info: {}, nodes: new Map(), links: [], linkKeys: new Set(), sel: null, hist: [], hpos: -1,
+            req: 0, mode: 'all', nbrs: new Set(), pinned: null, sig: '',
             hidden: new Set(), base: new Set(), delta: false, deltaOnly: false };
 
 // ---------------------------------------------------------------- theme / toggles
@@ -234,6 +237,25 @@ function setLabels(v) { const svg = $('#graph'); svg.classList.remove('labels-au
 setLabels(store.get('ontosys-labels') || 'auto');
 document.querySelectorAll('#labels button').forEach(b => b.onclick = () => setLabels(b.dataset.v));
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+let allLayout = null;   // positions of the All view while trail/focus lay out on their own
+function setMode(v, redraw = true) {
+  const prev = S.mode;
+  if (redraw && prev === 'all' && v !== 'all') {
+    allLayout = new Map([...S.nodes.values()].map(n => [n.iri, [n.x, n.y]]));
+    thawAll();
+  }
+  if (redraw && prev !== 'all' && v === 'all' && allLayout) {
+    for (const n of S.nodes.values()) { const p = allLayout.get(n.iri); if (p) { n.x = p[0]; n.y = p[1]; } }
+    freezeAll(); allLayout = null;
+  }
+  S.mode = v; store.set('ontosys-view', v); layoutFor(v);
+  document.querySelectorAll('#viewmode button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  if (!redraw) return;
+  if (v !== 'all' && current) addNeighbours(current);
+  draw(true);
+  if (v === 'all' && S.sel) focusNode(S.sel);
+}
+document.querySelectorAll('#viewmode button').forEach(b => b.onclick = () => setMode(b.dataset.v));
 function showTab(t) { document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   document.querySelectorAll('.tab').forEach(s => s.classList.toggle('on', s.id === 'tab-' + t)); }
 function setDelta(on, only) { S.delta = on; S.deltaOnly = only;
@@ -257,31 +279,56 @@ const sim = d3.forceSimulation()
   .force('charge', d3.forceManyBody().strength(-45).distanceMax(380))
   .force('collide', d3.forceCollide(7))
   .force('x', d3.forceX().strength(.035)).force('y', d3.forceY().strength(.035))
-  .on('tick', ticked);
+  .on('tick', ticked)
+  .on('end', () => { if (S.mode === 'all') freezeAll(); else fit(60, 500); });
+function layoutFor(mode) {
+  const roomy = mode !== 'all';
+  sim.force('link').distance(roomy ? 110 : 34).strength(roomy ? .7 : .5);
+  sim.force('charge').strength(roomy ? -320 : -45).distanceMax(roomy ? 900 : 380);
+  sim.force('collide').radius(roomy ? 28 : 7);
+  sim.alphaDecay(roomy ? .05 : .0228);
+}
+function freezeAll() { for (const n of S.nodes.values()) if (n.x != null) { n.fx = n.x; n.fy = n.y; } }
+function thawAll() { for (const n of S.nodes.values()) { n.fx = null; n.fy = null; } }
 function resize() { const r = $('#main').getBoundingClientRect(); width = r.width; height = r.height; }
 window.addEventListener('resize', resize); resize();
 
 let linkSel = gLinks.selectAll('line'), nodeSel = gNodes.selectAll('g');
-function draw() {
-  const nodes = [...S.nodes.values()].filter(n => !S.hidden.has(n.kind));
+function visibleNodes() {
+  let nodes = [...S.nodes.values()].filter(n => !S.hidden.has(n.kind));
+  if (S.mode !== 'all' && S.sel) {
+    const keep = new Set(S.nbrs); keep.add(S.sel);
+    if (S.mode === 'trail') S.hist.slice(0, S.hpos + 1).forEach(i => keep.add(i));
+    nodes = nodes.filter(n => keep.has(n.iri));
+  }
+  return nodes;
+}
+// reheat: true = force a relayout; otherwise only when nodes/links were added or removed
+function draw(reheat = false) {
+  const nodes = visibleNodes();
   const ids = new Set(nodes.map(n => n.iri));
   const links = S.links.filter(l => ids.has(id(l.source)) && ids.has(id(l.target)));
   linkSel = gLinks.selectAll('line').data(links, l => id(l.source) + '|' + l.p + '|' + id(l.target))
-    .join('line').attr('class', l => 'link ' + (l.status || ''));
+    .join('line').attr('class', l => 'link ' + (l.status || ''))
+    .classed('hl', l => S.sel && (id(l.source) === S.sel || id(l.target) === S.sel));
   nodeSel = gNodes.selectAll('g.node').data(nodes, d => d.iri).join(enter => {
     const g = enter.append('g').attr('class', 'node')
       .call(d3.drag().on('start', dragStart).on('drag', dragged).on('end', dragEnd))
       .on('click', (e, d) => { e.stopPropagation(); go(d.iri); })
       .on('mouseover', (e, d) => tip(e, d)).on('mousemove', (e, d) => tip(e, d)).on('mouseout', () => $('#tip').style.display = 'none');
-    g.append('circle');
+    g.append('circle').attr('class', 'hit').attr('r', 11);
+    g.append('circle').attr('class', 'v');
     g.append('text').attr('x', 8).attr('y', 3);
     return g;
   });
   nodeSel.attr('class', d => `node st-${d.status || 'unchanged'}${d.status === 'removed' ? ' removed' : ''}${S.sel === d.iri ? ' sel' : ''}${d.pin ? ' pin' : ''}`);
-  nodeSel.select('circle').attr('r', d => d.iri === S.sel ? 8 : (d.explored ? 6 : 4.5)).attr('fill', d => kindColor(d.kind));
+  nodeSel.select('circle.v').attr('r', d => d.iri === S.sel ? 8 : (d.explored ? 6 : 4.5)).attr('fill', d => kindColor(d.kind));
   nodeSel.select('text').text(d => d.label || d.short);
+  const sig = nodes.length + '|' + links.length + '|' + S.mode;
+  const changed = sig !== S.sig; S.sig = sig;
   sim.nodes(nodes); sim.force('link').links(links);
-  sim.alpha(Math.max(sim.alpha(), .3)).restart();
+  if (reheat || changed) sim.alpha(Math.max(sim.alpha(), S.mode === 'all' ? .12 : .6)).restart();
+  else ticked();
   legend();
 }
 const id = x => typeof x === 'object' ? x.iri : x;
@@ -291,15 +338,15 @@ function ticked() {
 }
 function dragStart(e, d) { if (!e.active) sim.alphaTarget(.2).restart(); d.fx = d.x; d.fy = d.y; }
 function dragged(e, d) { d.fx = e.x; d.fy = e.y; }
-function dragEnd(e, d) { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }
+function dragEnd(e, d) { if (!e.active) sim.alphaTarget(0); if (S.mode !== 'all') { d.fx = null; d.fy = null; } }
 function tip(e, d) { const t = $('#tip'); const r = $('#main').getBoundingClientRect();
   t.innerHTML = `<b>${esc(d.label || d.short)}</b> <span class="muted">${esc(short(d.kind))}</span> ${statusDot(d.status)}`;
   t.style.display = 'block'; t.style.left = (e.clientX - r.left + 12) + 'px'; t.style.top = (e.clientY - r.top + 12) + 'px'; }
-function fit(pad = 40, dur = 600) {
-  const ns = [...S.nodes.values()].filter(n => n.x != null && !S.hidden.has(n.kind));
+function fit(pad = 40, dur = 600, maxK = 2.2) {
+  const ns = visibleNodes().filter(n => n.x != null);
   if (!ns.length) return;
   const [x0, x1] = d3.extent(ns, n => n.x), [y0, y1] = d3.extent(ns, n => n.y);
-  const k = Math.min(4, 0.95 / Math.max((x1 - x0 + pad) / width, (y1 - y0 + pad) / height));
+  const k = Math.min(maxK, 0.95 / Math.max((x1 - x0 + pad) / width, (y1 - y0 + pad) / height));
   svg.transition().duration(dur).call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(k).translate(-(x0 + x1) / 2, -(y0 + y1) / 2));
 }
 function focusNode(iri, dur = 650) {
@@ -308,6 +355,7 @@ function focusNode(iri, dur = 650) {
   svg.transition().duration(dur).call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(k).translate(-n.x, -n.y));
 }
 $('#fit').onclick = () => fit();
+$('#relayout').onclick = () => { thawAll(); draw(true); sim.alpha(.8).restart(); setTimeout(() => fit(), 2500); };
 $('#clearx').onclick = () => {
   for (const [k, n] of S.nodes) if (!S.base.has(k)) S.nodes.delete(k);
   S.links = S.links.filter(l => S.base.has(id(l.source)) && S.base.has(id(l.target)));
@@ -318,7 +366,9 @@ svg.on('click', () => { $('#results').style.display = 'none'; });
 
 function legend() {
   const counts = new Map();
-  for (const n of S.nodes.values()) counts.set(n.kind, (counts.get(n.kind) || 0) + 1);
+  const shown = S.mode === 'all' ? [...S.nodes.values()] : visibleNodes();
+  for (const n of shown) counts.set(n.kind, (counts.get(n.kind) || 0) + 1);
+  for (const k of S.hidden) if (!counts.has(k)) counts.set(k, 0);
   $('#legend').innerHTML = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([k, c]) =>
     `<span data-k="${esc(k)}" class="${S.hidden.has(k) ? 'off' : ''}" title="click to hide/show"><i class="dot" style="background:${kindColor(k)}"></i>${esc(short(k))} <span class="muted">${fmt(c)}</span></span>`).join('');
   $('#legend').querySelectorAll('span[data-k]').forEach(s => s.onclick = () => {
@@ -344,7 +394,11 @@ function addNode(b, near, around) {
   }
   return n;
 }
+const PFX = [['https://ontosys.io/ns/c#', 'cx:'], ['https://ontosys.io/ns/pg#', 'pg:'], ['https://ontosys.io/ns/pgcat#', 'pgcat:'],
+  ['http://www.w3.org/2000/01/rdf-schema#', 'rdfs:'], ['http://www.w3.org/1999/02/22-rdf-syntax-ns#', 'rdf:']];
+const pk = p => { for (const [ns, sh] of PFX) if (p.startsWith(ns)) return sh + p.slice(ns.length); return p; };
 function addLink(s, p, t, status) {
+  p = pk(p);
   const k = s + '|' + p + '|' + t;
   if (S.linkKeys.has(k)) return;
   S.linkKeys.add(k); S.links.push({ source: s, target: t, p, status });
@@ -368,35 +422,36 @@ function crumbs() {
 }
 
 let current = null;
+function addNeighbours(d) {
+  for (const g of d.outgoing) for (const t of g.items) { addNode(t, d.iri); addLink(d.iri, g.p, t.iri, null); }
+  for (const g of d.incoming) for (const t of g.items) { addNode(t, d.iri); addLink(t.iri, g.p, d.iri, null); }
+}
 async function select(iri, from) {
   showTab('explore');
+  const my = ++S.req;
   const d = await api('/api/node', { iri, n: 30 });
+  if (my !== S.req) return;            // a newer selection superseded this one
   if (d.error) { $('#detail').innerHTML = `<div class="empty">${esc(d.error)}</div>`; return; }
   current = d;
   // bring onto the canvas: the node, plus the link we travelled along
   const drawnNeighbours = [...d.outgoing, ...d.incoming].flatMap(g => g.items.map(t => t.iri)).filter(i => S.nodes.has(i));
   addNode({ iri: d.iri, label: d.label, short: d.short, kind: d.kind, status: d.status }, from && from.iri, drawnNeighbours);
   if (from) from.dir === 'in' ? addLink(d.iri, from.p, from.iri, null) : addLink(from.iri, from.p, d.iri, null);
-  // neighbours already drawn get their links shown
+  // neighbours already drawn get their links shown; trail/focus views draw them all
   for (const g of d.outgoing) for (const t of g.items) if (S.nodes.has(t.iri)) addLink(d.iri, g.p, t.iri, null);
   for (const g of d.incoming) for (const t of g.items) if (S.nodes.has(t.iri)) addLink(t.iri, g.p, d.iri, null);
-  for (const n of S.nodes.values()) n.pin = false;
-  S.nodes.get(iri).pin = true;
+  if (S.mode !== 'all') addNeighbours(d);
+  S.nbrs = new Set([...d.outgoing, ...d.incoming].flatMap(g => g.items.map(t => t.iri)));
+  for (const n of S.nodes.values()) n.pin = S.nbrs.has(n.iri);
+  const node = S.nodes.get(iri); node.pin = true;
+  // keep the selection where it was placed, so the camera and the ring stay on it
+  if (S.mode === 'all' && node.x != null && node.fx == null) { node.fx = node.x; node.fy = node.y; }
   S.sel = iri; draw();
-  highlight(d);
-  setTimeout(() => focusNode(iri), 60);
+  if (S.mode === 'all') focusNode(iri);
   try { history.replaceState(null, '', '#' + encodeURIComponent(iri)); } catch (e) {}
   renderDetail(d); crumbs();
 }
-function highlight(d) {
-  const nb = new Set([d.iri]);
-  d.outgoing.forEach(g => g.items.forEach(t => nb.add(t.iri)));
-  d.incoming.forEach(g => g.items.forEach(t => nb.add(t.iri)));
-  for (const n of S.nodes.values()) if (nb.has(n.iri)) n.pin = true;
-  nodeSel.classed('pin', n => n.pin);
-  linkSel.classed('hl', l => id(l.source) === d.iri || id(l.target) === d.iri);
-}
-
+function highlight() { draw(); }
 function itemRow(t, from) {
   return `<div class="item" data-iri="${esc(t.iri)}" data-from='${esc(JSON.stringify(from))}'>
     <i class="dot" style="background:${kindColor(t.kind)};${t.status && t.status !== 'unchanged' ? 'border-color:var(--' + t.status + ')' : ''}"></i>
@@ -444,7 +499,7 @@ function renderDetail(d) {
   bindItems($('#detail'));
   $('#detail').querySelectorAll('.addall').forEach(b => b.onclick = e => {
     e.stopPropagation(); const grp = b.closest('.group');
-    grp.querySelectorAll('.item').forEach(it => addFromItem(it)); draw(); highlight(current); });
+    grp.querySelectorAll('.item').forEach(it => addFromItem(it)); draw(true); });
   $('#detail').querySelectorAll('.more').forEach(m => m.onclick = async () => {
     const grp = m.closest('.group'); const off = +m.dataset.off;
     const r = await api('/api/links', { iri: d.iri, p: grp.dataset.p, dir: grp.dataset.dir, offset: off, limit: 50 });
@@ -471,11 +526,7 @@ function guessKind(iri, shortKind) {
   for (const k of Object.keys(KIND)) if (short(k) === shortKind) return k;
   return shortKind;
 }
-function drawAll(d) {
-  for (const g of d.outgoing) for (const t of g.items) { addNode(t, d.iri); addLink(d.iri, g.p, t.iri, null); }
-  for (const g of d.incoming) for (const t of g.items) { addNode(t, d.iri); addLink(t.iri, g.p, d.iri, null); }
-  draw(); highlight(d);
-}
+function drawAll(d) { addNeighbours(d); draw(true); }
 
 // ---------------------------------------------------------------- search
 let sTimer = null, sIdx = -1;
@@ -586,6 +637,7 @@ async function runQuery() {
 
 // ---------------------------------------------------------------- boot
 async function boot() {
+  setMode(store.get('ontosys-view') || 'all', false);
   S.info = await api('/api/info');
   $('#subtitle').textContent = `${S.info.project || ''} ${S.info.version || ''}${S.info.baseline ? ' · compared with ' + S.info.baseline : ''}`;
   const v = await api('/api/view');
