@@ -1,0 +1,12 @@
+{
+  "name": "ontosys-ui-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:unit": "node --test logic.test.cjs",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0"
+  }
+}

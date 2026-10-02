@@ -27,3 +27,36 @@ jobs:
         continue-on-error: true # formatting is not yet clean across the tree
 
       - run: cargo test --locked --all-targets
+
+  # Explorer UI: pure decision logic (node:test) + end-to-end against `ontosys serve`
+  # on the fixture graph (tests/fixtures). API contract tests run in `test` above.
+  ui:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --no-self-update
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - run: cargo build --release --locked --bin ontosys
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: UI logic (unit)
+        run: node --test tests/ui/logic.test.cjs
+
+      - name: Install Playwright
+        working-directory: tests/ui
+        run: npm ci && npx playwright install --with-deps chromium
+
+      - name: UI end-to-end
+        working-directory: tests/ui
+        env:
+          CI: "1"
+        run: npx playwright test --reporter=line

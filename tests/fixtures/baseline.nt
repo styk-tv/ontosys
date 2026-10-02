@@ -1,0 +1,128 @@
+<https://ontosys.io/id/fixture/fn/src/demo.c/f01> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f01> <http://www.w3.org/2000/01/rdf-schema#label> "f01" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f01> <https://ontosys.io/ns/c#bodyHash> "bbbb" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f01> <https://ontosys.io/ns/c#calls> <https://ontosys.io/id/fixture/fn/src/demo.c/f03> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f01> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f01> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f02> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f02> <http://www.w3.org/2000/01/rdf-schema#label> "f02" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f02> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f02> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f03> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f03> <http://www.w3.org/2000/01/rdf-schema#label> "f03" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f03> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f03> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f04> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f04> <http://www.w3.org/2000/01/rdf-schema#label> "f04" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f04> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f04> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f05> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f05> <http://www.w3.org/2000/01/rdf-schema#label> "f05" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f05> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f05> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f06> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f06> <http://www.w3.org/2000/01/rdf-schema#label> "f06" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f06> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f06> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f07> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f07> <http://www.w3.org/2000/01/rdf-schema#label> "f07" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f07> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f07> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f08> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f08> <http://www.w3.org/2000/01/rdf-schema#label> "f08" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f08> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f08> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f09> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f09> <http://www.w3.org/2000/01/rdf-schema#label> "f09" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f09> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f09> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f10> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f10> <http://www.w3.org/2000/01/rdf-schema#label> "f10" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f10> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f10> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f11> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f11> <http://www.w3.org/2000/01/rdf-schema#label> "f11" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f11> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f11> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f12> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f12> <http://www.w3.org/2000/01/rdf-schema#label> "f12" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f12> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f12> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f13> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f13> <http://www.w3.org/2000/01/rdf-schema#label> "f13" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f13> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f13> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f14> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f14> <http://www.w3.org/2000/01/rdf-schema#label> "f14" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f14> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f14> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f15> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f15> <http://www.w3.org/2000/01/rdf-schema#label> "f15" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f15> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f15> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f16> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f16> <http://www.w3.org/2000/01/rdf-schema#label> "f16" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f16> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f16> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f17> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f17> <http://www.w3.org/2000/01/rdf-schema#label> "f17" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f17> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f17> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f18> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f18> <http://www.w3.org/2000/01/rdf-schema#label> "f18" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f18> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f18> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f19> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f19> <http://www.w3.org/2000/01/rdf-schema#label> "f19" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f19> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f19> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f21> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/c#Function> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f21> <http://www.w3.org/2000/01/rdf-schema#label> "f21" .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f21> <https://ontosys.io/ns/c#complexity> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ontosys.io/id/fixture/fn/src/demo.c/f21> <https://ontosys.io/ns/pg#mayRaise> <https://ontosys.io/id/fixture/pg/sqlstate/22012> .
+<https://ontosys.io/id/fixture/pg/area/src> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/pg#CodeArea> .
+<https://ontosys.io/id/fixture/pg/area/src> <http://www.w3.org/2000/01/rdf-schema#label> "src" .
+<https://ontosys.io/id/fixture/pg/catalog/pg_demo/column/a> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/pg#CatalogColumn> .
+<https://ontosys.io/id/fixture/pg/catalog/pg_demo/column/a> <http://www.w3.org/2000/01/rdf-schema#label> "pg_demo.a" .
+<https://ontosys.io/id/fixture/pg/catalog/pg_demo/column/b> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/pg#CatalogColumn> .
+<https://ontosys.io/id/fixture/pg/catalog/pg_demo/column/b> <http://www.w3.org/2000/01/rdf-schema#label> "pg_demo.b" .
+<https://ontosys.io/id/fixture/pg/catalog/pg_demo/column/c> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/pg#CatalogColumn> .
+<https://ontosys.io/id/fixture/pg/catalog/pg_demo/column/c> <http://www.w3.org/2000/01/rdf-schema#label> "pg_demo.c" .
+<https://ontosys.io/id/fixture/pg/catalog/pg_demo> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/pg#SystemCatalog> .
+<https://ontosys.io/id/fixture/pg/catalog/pg_demo> <http://www.w3.org/2000/01/rdf-schema#label> "pg_demo" .
+<https://ontosys.io/id/fixture/pg/catalog/pg_demo> <https://ontosys.io/ns/pg#hasColumn> <https://ontosys.io/id/fixture/pg/catalog/pg_demo/column/a> .
+<https://ontosys.io/id/fixture/pg/catalog/pg_demo> <https://ontosys.io/ns/pg#hasColumn> <https://ontosys.io/id/fixture/pg/catalog/pg_demo/column/b> .
+<https://ontosys.io/id/fixture/pg/catalog/pg_demo> <https://ontosys.io/ns/pg#hasColumn> <https://ontosys.io/id/fixture/pg/catalog/pg_demo/column/c> .
+<https://ontosys.io/id/fixture/pg/release/current> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/pg#Release> .
+<https://ontosys.io/id/fixture/pg/release/current> <http://www.w3.org/2000/01/rdf-schema#label> "Fixture fix1" .
+<https://ontosys.io/id/fixture/pg/release/current> <https://ontosys.io/ns/pg#version> "fix1" .
+<https://ontosys.io/id/fixture/pg/sqlstate/22012> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ontosys.io/ns/pg#SQLState> .
+<https://ontosys.io/id/fixture/pg/sqlstate/22012> <http://www.w3.org/2000/01/rdf-schema#label> "division_by_zero" .
+<https://ontosys.io/id/fixture/pg/sqlstate/22012> <https://ontosys.io/ns/pg#sqlstateCode> "22012" .
+<https://ontosys.io/ns/c#Function> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2002/07/owl#Class> .
+<https://ontosys.io/ns/c#Function> <http://www.w3.org/2000/01/rdf-schema#comment> "A function with a body, identified by file and name." .
+<https://ontosys.io/ns/c#Function> <http://www.w3.org/2000/01/rdf-schema#label> "C function definition" .
+<https://ontosys.io/ns/c#calls> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2002/07/owl#ObjectProperty> .
+<https://ontosys.io/ns/c#calls> <http://www.w3.org/2000/01/rdf-schema#label> "calls" .
+<https://ontosys.io/ns/pg#CatalogColumn> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2002/07/owl#Class> .
+<https://ontosys.io/ns/pg#CatalogColumn> <http://www.w3.org/2000/01/rdf-schema#comment> "A column of a system catalog, in attribute order." .
+<https://ontosys.io/ns/pg#CatalogColumn> <http://www.w3.org/2000/01/rdf-schema#label> "catalog column" .
+<https://ontosys.io/ns/pg#CatalogColumn> <https://ontosys.io/ns/pg#groundedIn> "src/include/catalog/pg_*.h" .
+<https://ontosys.io/ns/pg#CodeArea> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2002/07/owl#Class> .
+<https://ontosys.io/ns/pg#CodeArea> <http://www.w3.org/2000/01/rdf-schema#comment> "A directory of the source tree." .
+<https://ontosys.io/ns/pg#CodeArea> <http://www.w3.org/2000/01/rdf-schema#label> "code area" .
+<https://ontosys.io/ns/pg#CodeArea> <https://ontosys.io/ns/pg#groundedIn> "directory layout + README files" .
+<https://ontosys.io/ns/pg#Release> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2002/07/owl#Class> .
+<https://ontosys.io/ns/pg#Release> <http://www.w3.org/2000/01/rdf-schema#label> "release" .
+<https://ontosys.io/ns/pg#SQLState> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2002/07/owl#Class> .
+<https://ontosys.io/ns/pg#SQLState> <http://www.w3.org/2000/01/rdf-schema#comment> "An error condition code reported to clients." .
+<https://ontosys.io/ns/pg#SQLState> <http://www.w3.org/2000/01/rdf-schema#label> "SQLSTATE" .
+<https://ontosys.io/ns/pg#SQLState> <https://ontosys.io/ns/pg#groundedIn> "src/backend/utils/errcodes.txt" .
+<https://ontosys.io/ns/pg#SystemCatalog> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2002/07/owl#Class> .
+<https://ontosys.io/ns/pg#SystemCatalog> <http://www.w3.org/2000/01/rdf-schema#comment> "A table the server uses to describe itself." .
+<https://ontosys.io/ns/pg#SystemCatalog> <http://www.w3.org/2000/01/rdf-schema#label> "system catalog" .
+<https://ontosys.io/ns/pg#SystemCatalog> <https://ontosys.io/ns/pg#groundedIn> "src/include/catalog/pg_*.h CATALOG()" .
+<https://ontosys.io/ns/pg#hasColumn> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2002/07/owl#ObjectProperty> .
+<https://ontosys.io/ns/pg#hasColumn> <http://www.w3.org/2000/01/rdf-schema#label> "has column" .
+<https://ontosys.io/ns/pg#mayRaise> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2002/07/owl#ObjectProperty> .
+<https://ontosys.io/ns/pg#mayRaise> <http://www.w3.org/2000/01/rdf-schema#label> "may raise" .

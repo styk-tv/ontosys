@@ -22,7 +22,9 @@
   --border: #30363d; --canvas: #0d1117; --edge: #353c45; --accent: #58a6ff; --chip: #21262d;
   --stroke: #0d1117; --shadow: 0 1px 3px rgba(0,0,0,.5);
 }
-:root { --added: #1f9d55; --removed: #d1242f; --changed: #c48a00; --moved: #7b4fd0; }
+:root { --added: #1f9d55; --removed: #d1242f; --changed: #c48a00; --moved: #7b4fd0;
+  --fam-structure: #8a949f; --fam-reference: #3b7bd4; --fam-behaviour: #dc7f24; --fam-sql: #b24a9e;
+  --fam-type: #6c5fca; --fam-other: #a3aab2; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body { font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -120,10 +122,19 @@ select { border: 1px solid var(--border); background: var(--panel-2); border-rad
 /* ---- canvas ---- */
 #main { flex: 1; position: relative; background: var(--canvas); }
 svg#graph { width: 100%; height: 100%; display: block; }
-.link { stroke: var(--edge); stroke-opacity: .7; }
-.link.removed { stroke: var(--removed); stroke-dasharray: 3 3; }
-.link.added { stroke: var(--added); }
-.link.hl { stroke: var(--accent); stroke-opacity: 1; stroke-width: 1.6; }
+.lk line.vis { stroke: var(--edge); stroke-opacity: .75; stroke-width: 1; pointer-events: none; }
+.lk line.hitl { stroke: transparent; stroke-width: 7; pointer-events: stroke; cursor: help; }
+.lk.fam-structure line.vis { stroke: var(--fam-structure); } .lk.fam-reference line.vis { stroke: var(--fam-reference); }
+.lk.fam-behaviour line.vis { stroke: var(--fam-behaviour); } .lk.fam-sql line.vis { stroke: var(--fam-sql); }
+.lk.fam-type line.vis { stroke: var(--fam-type); } .lk.fam-other line.vis { stroke: var(--fam-other); }
+.lk.removed line.vis { stroke: var(--removed); stroke-dasharray: 3 3; } .lk.added line.vis { stroke: var(--added); }
+.lk.hl line.vis { stroke-opacity: 1; stroke-width: 2.4; }
+.lk text.plbl { display: none; font-size: 8px; fill: var(--muted); pointer-events: none;
+  paint-order: stroke; stroke: var(--canvas); stroke-width: 3px; }
+.plabels-all .lk text.plbl, .plabels-sel .lk.hl text.plbl { display: block; }
+.node.group circle.v { fill: var(--panel) !important; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 3 2; }
+.node.group text { display: block !important; font-weight: 600; }
+.famsw { display: inline-block; width: 14px; height: 3px; border-radius: 2px; flex: none; }
 .node circle.v { stroke: var(--stroke); stroke-width: 1; pointer-events: none; }
 .node circle.hit { fill: transparent; stroke: none; cursor: pointer; }
 .node.removed circle.v { fill-opacity: .45; }
@@ -132,7 +143,7 @@ svg#graph { width: 100%; height: 100%; display: block; }
 .delta-on .node.st-changed circle.v { stroke: var(--changed); stroke-width: 3; }
 .delta-on .node.st-moved circle.v { stroke: var(--moved); stroke-width: 3; }
 .delta-only .node.st-unchanged:not(.sel):not(.pin) { opacity: .12; }
-.delta-only .link:not(.hl):not(.added):not(.removed) { opacity: .1; }
+.delta-only .lk:not(.hl):not(.added):not(.removed) { opacity: .1; }
 .node.sel circle.v { stroke: var(--accent) !important; stroke-width: 4 !important; stroke-dasharray: none !important; }
 .node text { font-size: 9px; fill: var(--text); pointer-events: none; display: none;
   paint-order: stroke; stroke: var(--canvas); stroke-width: 3px; }
@@ -146,6 +157,8 @@ svg#graph { width: 100%; height: 100%; display: block; }
 #legend { position: absolute; left: 10px; bottom: 10px; max-height: 30%; overflow-y: auto; background: var(--panel); border: 1px solid var(--border);
   border-radius: 8px; padding: 8px 10px; box-shadow: var(--shadow); max-width: 58%; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; }
 #legend span { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+#legend .row { display: flex; flex-wrap: wrap; gap: 4px 10px; width: 100%; }
+#legend .row.fams span { cursor: default; }
 #legend span.off { opacity: .35; }
 #tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
   padding: 4px 8px; font-size: 12px; box-shadow: var(--shadow); display: none; max-width: 360px; }
@@ -189,6 +202,7 @@ svg#graph { width: 100%; height: 100%; display: block; }
     <div class="seg" id="viewmode"><button data-v="all" title="Everything drawn so far">View: all</button><button data-v="trail" title="Only the selections you walked through, plus the current one's neighbours">trail</button><button data-v="focus" title="Only the current selection and its neighbours">focus</button></div>
     <div class="seg" id="theme"><button data-v="light">Light</button><button data-v="medium">Medium</button><button data-v="dark">Dark</button></div>
     <div class="seg" id="labels"><button data-v="auto">Labels: auto</button><button data-v="all">all</button><button data-v="none">off</button></div>
+    <div class="seg" id="plabels"><button data-v="off">Link names: off</button><button data-v="sel" title="Names on the selection's links">selection</button><button data-v="all">all</button></div>
     <div class="seg" id="deltaseg" style="display:none"><button data-v="on" title="Colour nodes by their change">Delta</button><button data-v="only" title="Dim unchanged nodes">Changed only</button></div>
     <div class="seg"><button id="fit">Fit</button><button id="relayout" title="Recompute the layout of what is drawn">Relayout</button><button id="clearx" title="Remove nodes added by exploring">Reset</button></div>
   </div>
@@ -196,8 +210,10 @@ svg#graph { width: 100%; height: 100%; display: block; }
   <div id="tip"></div>
   <div id="loading">Loading graph…</div>
 </div>
+<script src="/logic.js"></script>
 <script>
 (() => {
+const L = window.OntoLogic;
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const api = (path, params) => fetch(path + (params ? '?' + new URLSearchParams(params) : '')).then(r => r.json());
@@ -223,7 +239,7 @@ const statusDot = s => s && s !== 'unchanged' ? `<span class="status ${s}">${s}<
 
 // ---------------------------------------------------------------- state
 const S = { info: {}, nodes: new Map(), links: [], linkKeys: new Set(), sel: null, hist: [], hpos: -1,
-            req: 0, mode: 'all', nbrs: new Set(), pinned: null, sig: '',
+            req: 0, mode: 'all', focus: new Set(), sig: '', pnames: new Map(),
             hidden: new Set(), base: new Set(), delta: false, deltaOnly: false };
 
 // ---------------------------------------------------------------- theme / toggles
@@ -236,6 +252,11 @@ function setLabels(v) { const svg = $('#graph'); svg.classList.remove('labels-au
   document.querySelectorAll('#labels button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); }
 setLabels(store.get('ontosys-labels') || 'auto');
 document.querySelectorAll('#labels button').forEach(b => b.onclick = () => setLabels(b.dataset.v));
+function setPlabels(v) { const svg = $('#graph'); svg.classList.remove('plabels-off', 'plabels-sel', 'plabels-all');
+  svg.classList.add('plabels-' + v); store.set('ontosys-plabels', v);
+  document.querySelectorAll('#plabels button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); }
+setPlabels(store.get('ontosys-plabels') || 'sel');
+document.querySelectorAll('#plabels button').forEach(b => b.onclick = () => setPlabels(b.dataset.v));
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 let allLayout = null;   // positions of the All view while trail/focus lay out on their own
 function setMode(v, redraw = true) {
@@ -293,37 +314,52 @@ function thawAll() { for (const n of S.nodes.values()) { n.fx = null; n.fy = nul
 function resize() { const r = $('#main').getBoundingClientRect(); width = r.width; height = r.height; }
 window.addEventListener('resize', resize); resize();
 
-let linkSel = gLinks.selectAll('line'), nodeSel = gNodes.selectAll('g');
+let linkSel = gLinks.selectAll('g.lk'), nodeSel = gNodes.selectAll('g');
 function visibleNodes() {
-  let nodes = [...S.nodes.values()].filter(n => !S.hidden.has(n.kind));
-  if (S.mode !== 'all' && S.sel) {
-    const keep = new Set(S.nbrs); keep.add(S.sel);
-    if (S.mode === 'trail') S.hist.slice(0, S.hpos + 1).forEach(i => keep.add(i));
-    nodes = nodes.filter(n => keep.has(n.iri));
-  }
-  return nodes;
+  const nodes = [...S.nodes.values()].filter(n => !S.hidden.has(n.kind));
+  const keep = L.visibleIds(S.mode, S.sel, S.focus, S.hist, S.hpos);
+  return keep ? nodes.filter(n => keep.has(n.iri)) : nodes;
 }
+// a link is highlighted when it touches the selection or one of the selection's group nodes
+function isHl(l) {
+  if (!S.sel) return false;
+  const a = id(l.source), b = id(l.target);
+  const owned = x => L.isHub(x) && S.nodes.get(x) && S.nodes.get(x).owner === S.sel;
+  return a === S.sel || b === S.sel || owned(a) || owned(b);
+}
+const pname = p => S.pnames.get(p) || short(p);
 // reheat: true = force a relayout; otherwise only when nodes/links were added or removed
 function draw(reheat = false) {
   const nodes = visibleNodes();
   const ids = new Set(nodes.map(n => n.iri));
   const links = S.links.filter(l => ids.has(id(l.source)) && ids.has(id(l.target)));
-  linkSel = gLinks.selectAll('line').data(links, l => id(l.source) + '|' + l.p + '|' + id(l.target))
-    .join('line').attr('class', l => 'link ' + (l.status || ''))
-    .classed('hl', l => S.sel && (id(l.source) === S.sel || id(l.target) === S.sel));
+  // neighbourhood membership is decided here, so nodes drawn after a selection are not left out
+  for (const n of S.nodes.values()) n.pin = n.iri === S.sel || S.focus.has(n.iri);
+  linkSel = gLinks.selectAll('g.lk').data(links, l => L.linkKey(id(l.source), l.p, id(l.target))).join(enter => {
+    const g = enter.append('g').attr('data-p', l => l.p).attr('data-s', l => id(l.source)).attr('data-t', l => id(l.target));
+    g.append('line').attr('class', 'hitl');
+    g.append('line').attr('class', 'vis');
+    g.append('text').attr('class', 'plbl').attr('text-anchor', 'middle');
+    g.on('mouseover', (e, l) => tipText(e, `<b>${esc(pname(l.p))}</b> <span class="muted">${esc(l.p)}</span>`))
+     .on('mousemove', (e, l) => tipText(e, `<b>${esc(pname(l.p))}</b> <span class="muted">${esc(l.p)}</span>`))
+     .on('mouseout', () => $('#tip').style.display = 'none');
+    return g;
+  });
+  linkSel.attr('class', l => `lk fam-${l.fam}${l.status ? ' ' + l.status : ''}${isHl(l) ? ' hl' : ''}`);
+  linkSel.select('text').text(l => pname(l.p));
   nodeSel = gNodes.selectAll('g.node').data(nodes, d => d.iri).join(enter => {
-    const g = enter.append('g').attr('class', 'node')
+    const g = enter.append('g').attr('class', 'node').attr('data-iri', d => d.iri)
       .call(d3.drag().on('start', dragStart).on('drag', dragged).on('end', dragEnd))
-      .on('click', (e, d) => { e.stopPropagation(); go(d.iri); })
+      .on('click', (e, d) => { e.stopPropagation(); d.isGroup ? expandHub(d) : go(d.iri); })
       .on('mouseover', (e, d) => tip(e, d)).on('mousemove', (e, d) => tip(e, d)).on('mouseout', () => $('#tip').style.display = 'none');
     g.append('circle').attr('class', 'hit').attr('r', 11);
     g.append('circle').attr('class', 'v');
     g.append('text').attr('x', 8).attr('y', 3);
     return g;
   });
-  nodeSel.attr('class', d => `node st-${d.status || 'unchanged'}${d.status === 'removed' ? ' removed' : ''}${S.sel === d.iri ? ' sel' : ''}${d.pin ? ' pin' : ''}`);
-  nodeSel.select('circle.v').attr('r', d => d.iri === S.sel ? 8 : (d.explored ? 6 : 4.5)).attr('fill', d => kindColor(d.kind));
-  nodeSel.select('text').text(d => d.label || d.short);
+  nodeSel.attr('class', d => `node st-${d.status || 'unchanged'}${d.status === 'removed' ? ' removed' : ''}${S.sel === d.iri ? ' sel' : ''}${d.pin ? ' pin' : ''}${d.isGroup ? ' group' : ''}`);
+  nodeSel.select('circle.v').attr('r', d => d.isGroup ? 10 : d.iri === S.sel ? 8 : (d.explored ? 6 : 4.5)).attr('fill', d => kindColor(d.kind));
+  nodeSel.select('text').text(d => d.label || d.short).attr('x', d => d.isGroup ? 13 : 8);
   const sig = nodes.length + '|' + links.length + '|' + S.mode;
   const changed = sig !== S.sig; S.sig = sig;
   sim.nodes(nodes); sim.force('link').links(links);
@@ -333,15 +369,19 @@ function draw(reheat = false) {
 }
 const id = x => typeof x === 'object' ? x.iri : x;
 function ticked() {
-  linkSel.attr('x1', l => l.source.x).attr('y1', l => l.source.y).attr('x2', l => l.target.x).attr('y2', l => l.target.y);
+  linkSel.selectAll('line').attr('x1', l => l.source.x).attr('y1', l => l.source.y).attr('x2', l => l.target.x).attr('y2', l => l.target.y);
+  linkSel.select('text').attr('x', l => (l.source.x + l.target.x) / 2).attr('y', l => (l.source.y + l.target.y) / 2 - 2);
   nodeSel.attr('transform', d => `translate(${d.x},${d.y})`);
 }
 function dragStart(e, d) { if (!e.active) sim.alphaTarget(.2).restart(); d.fx = d.x; d.fy = d.y; }
 function dragged(e, d) { d.fx = e.x; d.fy = e.y; }
 function dragEnd(e, d) { if (!e.active) sim.alphaTarget(0); if (S.mode !== 'all') { d.fx = null; d.fy = null; } }
-function tip(e, d) { const t = $('#tip'); const r = $('#main').getBoundingClientRect();
-  t.innerHTML = `<b>${esc(d.label || d.short)}</b> <span class="muted">${esc(short(d.kind))}</span> ${statusDot(d.status)}`;
-  t.style.display = 'block'; t.style.left = (e.clientX - r.left + 12) + 'px'; t.style.top = (e.clientY - r.top + 12) + 'px'; }
+function tipText(e, html) { const t = $('#tip'); const r = $('#main').getBoundingClientRect();
+  t.innerHTML = html; t.style.display = 'block'; t.style.left = (e.clientX - r.left + 12) + 'px'; t.style.top = (e.clientY - r.top + 12) + 'px'; }
+function tip(e, d) {
+  if (d.isGroup) return tipText(e, `<b>${esc(d.label)}</b><div class="small muted">${d.members.size < d.total ? `click to draw the next ${Math.min(L.GROUP_PAGE, d.total - d.members.size)}` : 'all drawn'}</div>`);
+  tipText(e, `<b>${esc(d.label || d.short)}</b> <span class="muted">${esc(short(d.kind))}</span> ${statusDot(d.status)}`);
+}
 function fit(pad = 40, dur = 600, maxK = 2.2) {
   const ns = visibleNodes().filter(n => n.x != null);
   if (!ns.length) return;
@@ -359,7 +399,8 @@ $('#relayout').onclick = () => { thawAll(); draw(true); sim.alpha(.8).restart();
 $('#clearx').onclick = () => {
   for (const [k, n] of S.nodes) if (!S.base.has(k)) S.nodes.delete(k);
   S.links = S.links.filter(l => S.base.has(id(l.source)) && S.base.has(id(l.target)));
-  S.linkKeys = new Set(S.links.map(l => id(l.source) + '|' + l.p + '|' + id(l.target)));
+  S.linkKeys = new Set(S.links.map(l => L.linkKey(id(l.source), l.p, id(l.target))));
+  S.focus = new Set([...S.focus].filter(i => S.nodes.has(i)));
   draw(); fit();
 };
 svg.on('click', () => { $('#results').style.display = 'none'; });
@@ -369,8 +410,11 @@ function legend() {
   const shown = S.mode === 'all' ? [...S.nodes.values()] : visibleNodes();
   for (const n of shown) counts.set(n.kind, (counts.get(n.kind) || 0) + 1);
   for (const k of S.hidden) if (!counts.has(k)) counts.set(k, 0);
-  $('#legend').innerHTML = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([k, c]) =>
-    `<span data-k="${esc(k)}" class="${S.hidden.has(k) ? 'off' : ''}" title="click to hide/show"><i class="dot" style="background:${kindColor(k)}"></i>${esc(short(k))} <span class="muted">${fmt(c)}</span></span>`).join('');
+  const fams = new Set(S.links.filter(l => { const a = S.nodes.get(id(l.source)), b = S.nodes.get(id(l.target)); return a && b; }).map(l => l.fam));
+  $('#legend').innerHTML = `<div class="row">${[...counts.entries()].filter(([k]) => k !== 'group').sort((a, b) => b[1] - a[1]).map(([k, c]) =>
+    `<span data-k="${esc(k)}" class="${S.hidden.has(k) ? 'off' : ''}" title="click to hide/show"><i class="dot" style="background:${kindColor(k)}"></i>${esc(short(k))} <span class="muted">${fmt(c)}</span></span>`).join('')}</div>` +
+    `<div class="row fams"><span class="muted">links:</span>${['structure', 'reference', 'behaviour', 'sql', 'type', 'other'].filter(f => fams.has(f)).map(f =>
+      `<span><i class="famsw" style="background:var(--fam-${f})"></i>${f}</span>`).join('')}</div>`;
   $('#legend').querySelectorAll('span[data-k]').forEach(s => s.onclick = () => {
     const k = s.dataset.k; S.hidden.has(k) ? S.hidden.delete(k) : S.hidden.add(k); draw(); });
 }
@@ -394,14 +438,11 @@ function addNode(b, near, around) {
   }
   return n;
 }
-const PFX = [['https://ontosys.io/ns/c#', 'cx:'], ['https://ontosys.io/ns/pg#', 'pg:'], ['https://ontosys.io/ns/pgcat#', 'pgcat:'],
-  ['http://www.w3.org/2000/01/rdf-schema#', 'rdfs:'], ['http://www.w3.org/1999/02/22-rdf-syntax-ns#', 'rdf:']];
-const pk = p => { for (const [ns, sh] of PFX) if (p.startsWith(ns)) return sh + p.slice(ns.length); return p; };
 function addLink(s, p, t, status) {
-  p = pk(p);
-  const k = s + '|' + p + '|' + t;
+  p = L.pk(p);
+  const k = L.linkKey(s, p, t);
   if (S.linkKeys.has(k)) return;
-  S.linkKeys.add(k); S.links.push({ source: s, target: t, p, status });
+  S.linkKeys.add(k); S.links.push({ source: s, target: t, p, status, fam: L.family(p) });
 }
 
 // ---------------------------------------------------------------- navigation
@@ -422,9 +463,59 @@ function crumbs() {
 }
 
 let current = null;
-function addNeighbours(d) {
-  for (const g of d.outgoing) for (const t of g.items) { addNode(t, d.iri); addLink(d.iri, g.p, t.iri, null); }
-  for (const g of d.incoming) for (const t of g.items) { addNode(t, d.iri); addLink(t.iri, g.p, d.iri, null); }
+// Draw one predicate group of `d`: its members directly when few, else a group node
+// (with `items`, if given, hanging off it).
+function addGroup(d, g, dir, items) {
+  const link = (a, b) => dir === 'in' ? addLink(b, g.p, a, null) : addLink(a, g.p, b, null);
+  S.pnames.set(L.pk(g.p), g.label || short(g.short));
+  if (!L.shouldGroup(g.total)) {
+    for (const t of items) { addNode(t, d.iri); link(d.iri, t.iri); }
+    return;
+  }
+  const hid = L.hubId(d.iri, dir, g.p);
+  let h = S.nodes.get(hid);
+  if (!h) {
+    const owner = S.nodes.get(d.iri);
+    h = { iri: hid, isGroup: true, kind: 'group', owner: d.iri, p: g.p, dir, total: g.total, members: new Set(),
+          name: g.label || short(g.short), x: owner && owner.x != null ? owner.x + (Math.random() - .5) * 40 : undefined,
+          y: owner && owner.y != null ? owner.y + (Math.random() - .5) * 40 : undefined };
+    S.nodes.set(hid, h);
+  }
+  link(d.iri, hid);
+  for (const t of items) { addNode(t, hid); link(hid, t.iri); h.members.add(t.iri); }
+  hubLabel(h);
+  if (d.iri === S.sel) { S.focus.add(hid); h.members.forEach(m => S.focus.add(m)); }
+}
+function hubLabel(h) {
+  const arrow = h.dir === 'in' ? '←' : '→';
+  h.label = `${arrow} ${h.name} · ${h.members.size ? fmt(h.members.size) + ' of ' : ''}${fmt(h.total)}`;
+}
+async function expandHub(h) {
+  if (h.members.size >= h.total) return;
+  const r = await api('/api/links', { iri: h.owner, p: h.p, dir: h.dir, offset: h.members.size, limit: L.GROUP_PAGE });
+  for (const t of r.items) {
+    addNode(t, h.iri);
+    h.dir === 'in' ? addLink(t.iri, h.p, h.iri, null) : addLink(h.iri, h.p, t.iri, null);
+    h.members.add(t.iri);
+    if (h.owner === S.sel) S.focus.add(t.iri);
+  }
+  hubLabel(h); draw(true);
+}
+// The neighbourhood of `d`: small groups' members, large groups as group nodes.
+function addNeighbours(d, withSamples = false) {
+  for (const g of d.outgoing) addGroup(d, g, 'out', !L.shouldGroup(g.total) || withSamples ? g.items : []);
+  for (const g of d.incoming) addGroup(d, g, 'in', !L.shouldGroup(g.total) || withSamples ? g.items : []);
+}
+function neighbourhood(d) {
+  const ids = new Set();
+  for (const [dir, gs] of [['out', d.outgoing], ['in', d.incoming]]) for (const g of gs) {
+    if (L.shouldGroup(g.total)) {
+      const h = S.nodes.get(L.hubId(d.iri, dir, g.p));
+      ids.add(L.hubId(d.iri, dir, g.p));
+      if (h) h.members.forEach(m => ids.add(m));
+    } else g.items.forEach(t => ids.add(t.iri));
+  }
+  return ids;
 }
 async function select(iri, from) {
   showTab('explore');
@@ -437,21 +528,22 @@ async function select(iri, from) {
   const drawnNeighbours = [...d.outgoing, ...d.incoming].flatMap(g => g.items.map(t => t.iri)).filter(i => S.nodes.has(i));
   addNode({ iri: d.iri, label: d.label, short: d.short, kind: d.kind, status: d.status }, from && from.iri, drawnNeighbours);
   if (from) from.dir === 'in' ? addLink(d.iri, from.p, from.iri, null) : addLink(from.iri, from.p, d.iri, null);
-  // neighbours already drawn get their links shown; trail/focus views draw them all
+  for (const g of [...d.outgoing, ...d.incoming]) S.pnames.set(L.pk(g.p), g.label || short(g.short));
+  // neighbours already drawn get their links shown; trail/focus views draw the neighbourhood
   for (const g of d.outgoing) for (const t of g.items) if (S.nodes.has(t.iri)) addLink(d.iri, g.p, t.iri, null);
   for (const g of d.incoming) for (const t of g.items) if (S.nodes.has(t.iri)) addLink(t.iri, g.p, d.iri, null);
+  S.sel = iri;
   if (S.mode !== 'all') addNeighbours(d);
-  S.nbrs = new Set([...d.outgoing, ...d.incoming].flatMap(g => g.items.map(t => t.iri)));
-  for (const n of S.nodes.values()) n.pin = S.nbrs.has(n.iri);
-  const node = S.nodes.get(iri); node.pin = true;
+  S.focus = neighbourhood(d);
+  const node = S.nodes.get(iri);
   // keep the selection where it was placed, so the camera and the ring stay on it
   if (S.mode === 'all' && node.x != null && node.fx == null) { node.fx = node.x; node.fy = node.y; }
-  S.sel = iri; draw();
+  draw();
   if (S.mode === 'all') focusNode(iri);
   try { history.replaceState(null, '', '#' + encodeURIComponent(iri)); } catch (e) {}
   renderDetail(d); crumbs();
 }
-function highlight() { draw(); }
+
 function itemRow(t, from) {
   return `<div class="item" data-iri="${esc(t.iri)}" data-from='${esc(JSON.stringify(from))}'>
     <i class="dot" style="background:${kindColor(t.kind)};${t.status && t.status !== 'unchanged' ? 'border-color:var(--' + t.status + ')' : ''}"></i>
@@ -462,7 +554,7 @@ function groupHtml(g, dir, d) {
   const name = g.label || short(g.short);
   const shown = g.items.length;
   return `<div class="group" data-p="${esc(g.p)}" data-dir="${dir}">
-    <div class="ghead" title="${esc(g.comment || g.short)}"><span>${arrow}</span><span class="p">${esc(name)}</span><span class="n">${fmt(g.total)}</span>
+    <div class="ghead" title="${esc(g.comment || g.short)}"><i class="famsw" style="background:var(--fam-${L.family(g.p)})"></i><span>${arrow}</span><span class="p">${esc(name)}</span><span class="n">${fmt(g.total)}</span>
       <button class="addall" title="Draw these on the canvas">draw</button></div>
     <div class="items">${g.items.map(t => itemRow(t, { iri: d.iri, p: g.p, dir })).join('')}</div>
     ${g.total > shown ? `<div class="more" data-off="${shown}">show ${fmt(Math.min(50, g.total - shown))} more of ${fmt(g.total - shown)}…</div>` : ''}
@@ -499,7 +591,9 @@ function renderDetail(d) {
   bindItems($('#detail'));
   $('#detail').querySelectorAll('.addall').forEach(b => b.onclick = e => {
     e.stopPropagation(); const grp = b.closest('.group');
-    grp.querySelectorAll('.item').forEach(it => addFromItem(it)); draw(true); });
+    const g = (grp.dataset.dir === 'in' ? d.incoming : d.outgoing).find(x => x.p === grp.dataset.p);
+    addGroup(d, g, grp.dataset.dir, [...grp.querySelectorAll('.item')].map(itemBrief));
+    S.focus = neighbourhood(d); draw(true); });
   $('#detail').querySelectorAll('.more').forEach(m => m.onclick = async () => {
     const grp = m.closest('.group'); const off = +m.dataset.off;
     const r = await api('/api/links', { iri: d.iri, p: grp.dataset.p, dir: grp.dataset.dir, offset: off, limit: 50 });
@@ -515,18 +609,14 @@ function renderDetail(d) {
 function bindItems(el) {
   el.querySelectorAll('.item').forEach(it => it.onclick = () => go(it.dataset.iri, JSON.parse(it.dataset.from)));
 }
-function addFromItem(it) {
-  const from = JSON.parse(it.dataset.from);
-  const kind = it.querySelector('.k').textContent;
-  const t = { iri: it.dataset.iri, label: it.querySelector('.lbl').textContent, kind: guessKind(it.dataset.iri, kind) };
-  addNode(t, from.iri);
-  from.dir === 'in' ? addLink(t.iri, from.p, from.iri, null) : addLink(from.iri, from.p, t.iri, null);
+function itemBrief(it) {
+  return { iri: it.dataset.iri, label: it.querySelector('.lbl').textContent, kind: guessKind(it.dataset.iri, it.querySelector('.k').textContent) };
 }
 function guessKind(iri, shortKind) {
   for (const k of Object.keys(KIND)) if (short(k) === shortKind) return k;
   return shortKind;
 }
-function drawAll(d) { addNeighbours(d); draw(true); }
+function drawAll(d) { addNeighbours(d, true); S.focus = neighbourhood(d); draw(true); }
 
 // ---------------------------------------------------------------- search
 let sTimer = null, sIdx = -1;
