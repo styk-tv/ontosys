@@ -42,8 +42,8 @@ COMMANDS:
     init      Initialize .ontosys/ folder in a git repository
     build     Build/rebuild the knowledge graph from source files
     stats     Show statistics about the knowledge graph
-    serve     Start the visualization web server
-    query     Execute a query against the graph
+    serve     Explore the graph in the browser (SPARQL-backed; --compare for a delta)
+    query     Run a SPARQL query against the built graph
     export    Export the graph to a file
     watch     Watch for file changes and rebuild automatically
     diff      Semantic diff of two builds (repositories or graph.nt files)
@@ -69,9 +69,12 @@ ontosys build --jobs 8
 # Start server on custom port
 ontosys serve --port 8080 --open
 
-# Query for functions (simple pattern match over graph.json — not SPARQL;
-# for SPARQL, load graph.nt into an RDF store, see below)
-ontosys query "function"
+# SPARQL over the built graph (table, csv or json)
+ontosys query 'PREFIX cx: <https://ontosys.io/ns/c#>
+  SELECT ?f ?c WHERE { ?f cx:complexity ?c } ORDER BY DESC(?c) LIMIT 10'
+
+# Explore a build, with another build of the same project as the baseline
+ontosys serve --open --compare ../project-v1
 
 # Compare two builds of the same project semantically
 ontosys diff ../project-v1 ../project-v2 --out report.md --json report.json
@@ -91,7 +94,7 @@ ontosys stats
 ├── data/
 │   ├── graph.ttl     # RDF in Turtle format
 │   ├── graph.nt      # RDF in N-Triples format
-│   ├── graph.json    # JSON-LD for visualization (skipped above 250k triples)
+│   ├── graph.json    # JSON-LD for visualization (an overview above 250k triples)
 │   ├── docs.json     # Comments + markdown docs metadata
 │   └── build-meta.json
 ├── cache/            # Parsed AST cache
@@ -246,8 +249,6 @@ reachability outside the store.
   profile so other projects can be grounded without code changes. Because
   output is deterministic, a profile-driven build must reproduce today's
   `graph.nt` byte for byte on the same sources.
-- `ontosys query` is a simple pattern matcher over `graph.json`, and
-  `graph.json` is not written above 250k triples. Use an RDF store for SPARQL.
 - The `type_state_demo` and `ingest_repo` examples do not compile (they
   predate the current module layout).
 
@@ -274,15 +275,39 @@ reachability outside the store.
 | `code:hasField` | Struct | Field | Field membership |
 | `code:hasParameter` | Function | Parameter | Parameter membership |
 
-## Visualization
+## Explorer (`ontosys serve`)
 
-The built-in visualization provides:
+`serve` loads the full `graph.nt` into an embedded, in-memory SPARQL store
+([Oxigraph](https://github.com/oxigraph/oxigraph)) and opens a browser
+explorer over it. With `--compare <other checkout or graph.nt>` a second build
+is loaded as the named graph `urn:ontosys:baseline`, and every entity carries
+its delta — the same computation `ontosys diff` reports.
 
-- **Interactive Graph**: D3.js force-directed layout
-- **Filtering**: By node type, search query
-- **Details Panel**: Properties of selected nodes
-- **Zoom & Pan**: Mouse/trackpad navigation
-- **Responsive**: Full-screen adaptive layout
+- **Explore**: search every label in both builds; the selected entity shows its
+  grounding (what its class means and which repository file defines it), its
+  change between builds, its properties, and its links grouped by predicate,
+  outgoing and incoming. Each link is a step: it brings the target onto the
+  canvas, connects it and focuses it, with back/forward history and a
+  shareable URL.
+- **Canvas**: the whole graph when small; otherwise an overview of the
+  grounded structure (for PostgreSQL: code areas, catalogs and columns, node
+  types, SQLSTATEs) that grows as you explore. Delta colouring and a
+  "changed only" view.
+- **Stats**: SPARQL aggregates over the full graph, computed at startup —
+  entities by class, functions per code area, most raised error conditions,
+  most read settings, most created node types, most called and most complex
+  functions, … — every row clickable.
+- **Delta**: added / removed / changed per kind, browsable lists.
+- **SPARQL**: any read-only query, with examples; IRIs in results are links.
+- Light / medium / dark themes (medium by default).
+
+HTTP API (JSON): `/api/info`, `/api/view`, `/api/node?iri=`,
+`/api/links?iri=&p=&dir=`, `/api/search?q=`, `/api/aggregates`, `/api/delta`,
+`/api/delta/list?class=&status=`, `/api/sparql?query=` (GET or POST).
+
+PostgreSQL 19 (≈1.1M triples per build): both builds load in ≈3.5 s and use
+≈2.4 GB of memory; aggregates take milliseconds, and the whole-graph
+`baseline MINUS current` comparison ≈0.8 s.
 
 ## Type-Level Safety Patterns
 

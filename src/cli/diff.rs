@@ -24,7 +24,7 @@ const PG: &str = "https://ontosys.io/ns/pg#";
 const POSITIONAL: &[&str] = &["startLine", "endLine", "line", "parseErrors"];
 
 /// Report order: the most specific class an entity has decides its section.
-const SECTIONS: &[(&str, &str)] = &[
+pub const SECTIONS: &[(&str, &str)] = &[
     ("pg:Release", "Release"),
     ("pg:BuiltinFunction", "Built-in SQL functions (pg_proc)"),
     ("pg:DataType", "Built-in types (pg_type)"),
@@ -68,7 +68,7 @@ const SECTIONS: &[(&str, &str)] = &[
 const COUNT_ONLY: &[&str] = &["cx:ExternalSymbol", "cx:SystemHeader", "owl:Class", "owl:ObjectProperty", "owl:DatatypeProperty"];
 
 /// Profile predicates of a function, with their reading.
-const PROFILE: &[(&str, &str)] = &[
+pub const PROFILE: &[(&str, &str)] = &[
     ("pg:implementsSQLFunction", "implements SQL function"),
     ("rdf:type", "role"),
     ("cx:signature", "signature"),
@@ -93,15 +93,15 @@ const PROFILE: &[(&str, &str)] = &[
 
 /// One graph: entity → set of (predicate, object), plus lookups for rendering.
 #[derive(Default)]
-struct Graph {
-    labels: BTreeMap<String, String>,
-    types: BTreeMap<String, BTreeSet<String>>,
-    parent: BTreeMap<String, String>,
-    defined_in: BTreeMap<String, String>,
-    in_area: BTreeMap<String, String>,
-    body_hash: BTreeMap<String, String>,
-    version: Option<String>,
-    triples: usize,
+pub struct Graph {
+    pub labels: BTreeMap<String, String>,
+    pub types: BTreeMap<String, BTreeSet<String>>,
+    pub parent: BTreeMap<String, String>,
+    pub defined_in: BTreeMap<String, String>,
+    pub in_area: BTreeMap<String, String>,
+    pub body_hash: BTreeMap<String, String>,
+    pub version: Option<String>,
+    pub triples: usize,
 }
 
 struct Line<'a> {
@@ -117,7 +117,7 @@ fn split(line: &str) -> Option<Line<'_>> {
     Some(Line { s, p, o })
 }
 
-fn compact(iri: &str) -> String {
+pub fn compact(iri: &str) -> String {
     let inner = iri.trim_start_matches('<').trim_end_matches('>');
     for (ns, short) in [
         (CX, "cx"),
@@ -140,7 +140,7 @@ fn is_positional(p: &str) -> bool {
 }
 
 /// Lexical form of a literal object, unescaped.
-fn literal_text(o: &str) -> Option<String> {
+pub fn literal_text(o: &str) -> Option<String> {
     if !o.starts_with('"') {
         return None;
     }
@@ -165,7 +165,7 @@ fn literal_text(o: &str) -> Option<String> {
 }
 
 impl Graph {
-    fn load(text: &str) -> Graph {
+    pub fn load(text: &str) -> Graph {
         let mut g = Graph::default();
         for line in text.lines() {
             let Some(l) = split(line) else { continue };
@@ -203,7 +203,7 @@ impl Graph {
         g
     }
 
-    fn label(&self, iri: &str) -> String {
+    pub fn label(&self, iri: &str) -> String {
         let own = self.labels.get(iri).cloned().unwrap_or_else(|| {
             let t = iri.trim_end_matches('>');
             t.rsplit('/').next().unwrap_or(t).to_string()
@@ -215,14 +215,14 @@ impl Graph {
     }
 
     /// Label plus defining file, for telling same-named entities apart.
-    fn locate(&self, o: &str) -> String {
+    pub fn locate(&self, o: &str) -> String {
         match self.defined_in.get(o) {
             Some(f) => format!("{} in {}", self.label(o), self.label(f)),
             None => compact(o),
         }
     }
 
-    fn render(&self, o: &str) -> String {
+    pub fn render(&self, o: &str) -> String {
         if let Some(t) = literal_text(o) {
             return t;
         }
@@ -242,12 +242,12 @@ impl Graph {
     }
 
     /// The area (directory) of an entity: its own, or that of its defining file.
-    fn area_of(&self, iri: &str) -> Option<String> {
+    pub fn area_of(&self, iri: &str) -> Option<String> {
         let file = self.defined_in.get(iri).map(|s| s.as_str()).unwrap_or(iri);
         self.in_area.get(file).map(|a| self.label(a))
     }
 
-    fn section(&self, iri: &str) -> &'static str {
+    pub fn section(&self, iri: &str) -> &'static str {
         let types = self.types.get(iri);
         for (class, _) in SECTIONS {
             if types.map_or(false, |t| t.contains(*class)) {
@@ -269,20 +269,31 @@ impl Graph {
 }
 
 #[derive(Default)]
-struct EntityDiff {
-    removed: Vec<(String, String)>,
-    added: Vec<(String, String)>,
+pub struct EntityDiff {
+    pub removed: Vec<(String, String)>,
+    pub added: Vec<(String, String)>,
 }
 
-pub async fn run(old: &Path, new: &Path, out: Option<PathBuf>, json: Option<PathBuf>) -> anyhow::Result<()> {
-    let old_nt = resolve_graph(old)?;
-    let new_nt = resolve_graph(new)?;
-    info(&format!("Old: {}", old_nt.display()));
-    info(&format!("New: {}", new_nt.display()));
-    let old_text = fs::read_to_string(&old_nt)?;
-    let new_text = fs::read_to_string(&new_nt)?;
-    let a = Graph::load(&old_text);
-    let b = Graph::load(&new_text);
+/// Entity-level comparison of two canonical graphs (old → new).
+pub struct Analysis {
+    pub a: Graph,
+    pub b: Graph,
+    /// Changed facts per subject (positional facts excluded)
+    pub diffs: BTreeMap<String, EntityDiff>,
+    /// Section (most specific class) → subjects only in the new graph
+    pub added: BTreeMap<&'static str, Vec<String>>,
+    /// Section → subjects only in the old graph
+    pub removed: BTreeMap<&'static str, Vec<String>>,
+    /// Section → subjects in both whose facts differ
+    pub changed: BTreeMap<&'static str, Vec<String>>,
+    /// Functions that moved file with the same name and body hash: (old, new)
+    pub moves: Vec<(String, String)>,
+}
+
+/// Compare two canonical N-Triples texts: a streaming merge of sorted lines.
+pub fn analyze(old_text: &str, new_text: &str) -> Analysis {
+    let a = Graph::load(old_text);
+    let b = Graph::load(new_text);
 
     // Streaming merge over canonical (sorted) lines.
     let mut diffs: BTreeMap<String, EntityDiff> = BTreeMap::new();
@@ -350,6 +361,18 @@ pub async fn run(old: &Path, new: &Path, out: Option<PathBuf>, json: Option<Path
         removed.get_mut("cx:Function").unwrap().retain(|s| !moved_from.contains(s));
         added.get_mut("cx:Function").unwrap().retain(|s| !moved_to.contains(s));
     }
+
+    Analysis { a, b, diffs, added, removed, changed, moves }
+}
+
+pub async fn run(old: &Path, new: &Path, out: Option<PathBuf>, json: Option<PathBuf>) -> anyhow::Result<()> {
+    let old_nt = resolve_graph(old)?;
+    let new_nt = resolve_graph(new)?;
+    info(&format!("Old: {}", old_nt.display()));
+    info(&format!("New: {}", new_nt.display()));
+    let old_text = fs::read_to_string(&old_nt)?;
+    let new_text = fs::read_to_string(&new_nt)?;
+    let Analysis { a, b, diffs, added, removed, changed, moves } = analyze(&old_text, &new_text);
 
     // ---- report -------------------------------------------------------------
     let mut r = String::new();
@@ -531,7 +554,7 @@ fn function_section(
 }
 
 /// The most significant kind of change to a function, for triage.
-fn change_kind(e: &EntityDiff) -> &'static str {
+pub fn change_kind(e: &EntityDiff) -> &'static str {
     let preds: BTreeSet<&str> = e.removed.iter().chain(e.added.iter()).map(|(p, _)| p.as_str()).collect();
     let has = |p: &str| preds.contains(p);
     if has("cx:signature") || has("cx:parameters") {
@@ -668,7 +691,7 @@ fn section_title(class: &str) -> String {
 }
 
 /// Show only the differing middle of two long texts, with some context.
-fn text_delta(old: &str, new: &str) -> (String, String) {
+pub fn text_delta(old: &str, new: &str) -> (String, String) {
     let (a, b): (Vec<char>, Vec<char>) = (old.replace('\n', " ").chars().collect(), new.replace('\n', " ").chars().collect());
     if a.len() <= 200 && b.len() <= 200 {
         return (clip(old), clip(new));
@@ -704,7 +727,7 @@ fn sanitize(s: &str) -> String {
 }
 
 /// Accept a repository (uses its `.ontosys/data/graph.nt`) or an `.nt` file.
-fn resolve_graph(p: &Path) -> anyhow::Result<PathBuf> {
+pub fn resolve_graph(p: &Path) -> anyhow::Result<PathBuf> {
     if p.is_file() {
         return Ok(p.to_path_buf());
     }

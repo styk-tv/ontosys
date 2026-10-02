@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="medium">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OntoSys Explorer</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%224%22 cy=%224%22 r=%223%22 fill=%22%232f6fd6%22/%3E%3Ccircle cx=%2212%22 cy=%227%22 r=%223%22 fill=%22%230f8b8d%22/%3E%3Ccircle cx=%226%22 cy=%2213%22 r=%222.5%22 fill=%22%23e8823a%22/%3E%3C/svg%3E">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+:root, [data-theme="medium"] {
+  --bg: #9aa1aa; --panel: #bcc2c9; --panel-2: #b0b7bf; --text: #111418; --muted: #383f48;
+  --border: #8c939c; --canvas: #c6cbd1; --edge: #7a828c; --accent: #163f8a; --chip: #a7aeb7;
+  --stroke: #eef0f2; --shadow: 0 1px 3px rgba(0,0,0,.18);
+}
+[data-theme="light"] {
+  --bg: #eef0f3; --panel: #ffffff; --panel-2: #f3f5f7; --text: #1f2328; --muted: #59636e;
+  --border: #d5dbe1; --canvas: #fafbfc; --edge: #b6bec8; --accent: #0b62d6; --chip: #e8ecf0;
+  --stroke: #ffffff; --shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+[data-theme="dark"] {
+  --bg: #0d1117; --panel: #161b22; --panel-2: #1c2129; --text: #e6edf3; --muted: #8b949e;
+  --border: #30363d; --canvas: #0d1117; --edge: #353c45; --accent: #58a6ff; --chip: #21262d;
+  --stroke: #0d1117; --shadow: 0 1px 3px rgba(0,0,0,.5);
+}
+:root { --added: #1f9d55; --removed: #d1242f; --changed: #c48a00; --moved: #7b4fd0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: var(--bg); color: var(--text); display: flex; overflow: hidden; }
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: var(--accent); }
+
+/* ---- sidebar ---- */
+#side { width: 420px; min-width: 340px; background: var(--panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; height: 100%; }
+#head { padding: 12px 14px 8px; border-bottom: 1px solid var(--border); }
+#brand { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#brand h1 { margin: 0; font-size: 16px; color: var(--accent); }
+#brand .sub { color: var(--muted); font-size: 12px; }
+#numbers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 12px; margin-top: 8px; }
+#numbers div b { display: block; font-size: 17px; }
+#numbers div span { color: var(--muted); font-size: 11px; }
+#tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--panel-2); }
+#tabs button { flex: 1; padding: 8px 4px; border: 0; background: transparent; cursor: pointer;
+  border-bottom: 2px solid transparent; color: var(--muted); }
+#tabs button.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.tab { display: none; overflow-y: auto; flex: 1; padding: 12px 14px 24px; }
+.tab.on { display: block; }
+h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 16px 0 6px; }
+.muted { color: var(--muted); }
+.small { font-size: 11px; }
+
+/* search */
+#searchwrap { position: relative; }
+#search { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); }
+#results { position: absolute; z-index: 5; left: 0; right: 0; top: 38px; background: var(--panel);
+  border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow); max-height: 360px; overflow-y: auto; display: none; }
+#results .row { padding: 6px 10px; cursor: pointer; display: flex; gap: 8px; align-items: center; }
+#results .row:hover, #results .row.hl { background: var(--panel-2); }
+
+/* nav */
+#nav { display: flex; align-items: center; gap: 6px; margin: 10px 0 4px; }
+#nav button { border: 1px solid var(--border); background: var(--panel-2); border-radius: 5px; padding: 2px 8px; cursor: pointer; }
+#nav button:disabled { opacity: .4; cursor: default; }
+#crumbs { display: flex; gap: 4px; overflow: hidden; white-space: nowrap; flex: 1; }
+#crumbs span { cursor: pointer; color: var(--muted); font-size: 11px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+#crumbs span:hover { color: var(--accent); }
+
+/* card */
+.card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
+.card h2 { margin: 0 0 4px; font-size: 16px; word-break: break-word; }
+.badges { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.badge { font-size: 11px; padding: 1px 7px; border-radius: 10px; background: var(--chip); border: 1px solid var(--border); }
+.badge.kind { color: #fff; border: 0; }
+.status { font-size: 11px; padding: 1px 7px; border-radius: 10px; color: #fff; }
+.status.added { background: var(--added); } .status.removed { background: var(--removed); }
+.status.changed { background: var(--changed); } .status.moved { background: var(--moved); }
+.iri { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); word-break: break-all; }
+.ground { border-left: 3px solid var(--accent); padding: 4px 8px; margin: 6px 0; background: var(--panel); border-radius: 0 6px 6px 0; }
+.ground b { font-size: 12px; }
+.kv { display: grid; grid-template-columns: 130px 1fr; gap: 3px 10px; font-size: 12px; }
+.kv .k { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.kv .v { word-break: break-word; }
+.kv .v.clip { max-height: 4.4em; overflow: hidden; cursor: pointer; }
+.group { margin-top: 6px; }
+.ghead { display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 3px 0; }
+.ghead .p { font-weight: 600; }
+.ghead .n { color: var(--muted); font-size: 11px; }
+.ghead button { margin-left: auto; font-size: 11px; border: 1px solid var(--border); background: var(--panel); border-radius: 4px; cursor: pointer; padding: 0 6px; }
+.items { padding-left: 4px; }
+.item { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+.item:hover { background: var(--panel); }
+.item .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item .k { color: var(--muted); font-size: 10px; margin-left: auto; white-space: nowrap; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; border: 1.5px solid transparent; }
+.more { font-size: 11px; color: var(--accent); cursor: pointer; padding: 2px 4px; }
+.change { font-size: 12px; margin: 4px 0; }
+.change .p { color: var(--muted); }
+.change .rm { color: var(--removed); } .change .ad { color: var(--added); }
+.change code { font-size: 11px; background: var(--panel); padding: 0 3px; border-radius: 3px; word-break: break-word; }
+.actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.actions button, .btn { border: 1px solid var(--border); background: var(--panel); border-radius: 5px; padding: 3px 9px; cursor: pointer; }
+.actions button:hover, .btn:hover { border-color: var(--accent); }
+.empty { color: var(--muted); padding: 16px 0; }
+
+/* tables */
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { text-align: left; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); padding: 3px 4px; }
+td { border-bottom: 1px solid var(--border); padding: 3px 4px; vertical-align: top; word-break: break-word; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+td .go { color: var(--accent); cursor: pointer; }
+.agg { margin-bottom: 14px; }
+.agg h4 { margin: 0 0 2px; font-size: 13px; }
+.cnt { cursor: pointer; color: var(--accent); }
+.cnt.zero { color: var(--muted); cursor: default; }
+textarea { width: 100%; min-height: 150px; font: 12px ui-monospace, Menlo, monospace; padding: 8px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); }
+select { border: 1px solid var(--border); background: var(--panel-2); border-radius: 5px; padding: 3px; max-width: 100%; }
+
+/* ---- canvas ---- */
+#main { flex: 1; position: relative; background: var(--canvas); }
+svg#graph { width: 100%; height: 100%; display: block; }
+.link { stroke: var(--edge); stroke-opacity: .7; }
+.link.removed { stroke: var(--removed); stroke-dasharray: 3 3; }
+.link.added { stroke: var(--added); }
+.link.hl { stroke: var(--accent); stroke-opacity: 1; stroke-width: 1.6; }
+.node circle { stroke: var(--stroke); stroke-width: 1; cursor: pointer; }
+.node.removed circle { fill-opacity: .45; }
+.delta-on .node.st-added circle { stroke: var(--added); stroke-width: 3; }
+.delta-on .node.st-removed circle { stroke: var(--removed); stroke-width: 3; stroke-dasharray: 2 1; }
+.delta-on .node.st-changed circle { stroke: var(--changed); stroke-width: 3; }
+.delta-on .node.st-moved circle { stroke: var(--moved); stroke-width: 3; }
+.delta-only .node.st-unchanged { opacity: .12; }
+.delta-only .link.unchanged { opacity: .1; }
+.node.sel circle { stroke: var(--accent); stroke-width: 3.5; }
+.node text { font-size: 9px; fill: var(--text); pointer-events: none; display: none;
+  paint-order: stroke; stroke: var(--canvas); stroke-width: 3px; }
+.labels-all .node text, .labels-auto.zoomed .node text, .labels-auto .node.pin text, .labels-all .node.pin text { display: block; }
+.labels-none .node:not(.sel) text { display: none !important; }
+.node.dim { opacity: .25; }
+#toolbar { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.seg { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--panel); box-shadow: var(--shadow); }
+.seg button { border: 0; background: transparent; padding: 4px 10px; cursor: pointer; }
+.seg button.on { background: var(--accent); color: #fff; }
+#legend { position: absolute; left: 10px; bottom: 10px; max-height: 30%; overflow-y: auto; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; box-shadow: var(--shadow); max-width: 58%; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; }
+#legend span { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+#legend span.off { opacity: .35; }
+#tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  padding: 4px 8px; font-size: 12px; box-shadow: var(--shadow); display: none; max-width: 360px; }
+#loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; }
+#mode { position: absolute; right: 10px; bottom: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 11px; box-shadow: var(--shadow); max-width: 32%; }
+</style>
+</head>
+<body>
+<aside id="side">
+  <div id="head">
+    <div id="brand"><h1>OntoSys</h1><span class="sub" id="subtitle"></span></div>
+    <div id="numbers"></div>
+  </div>
+  <div id="tabs">
+    <button data-tab="explore" class="on">Explore</button>
+    <button data-tab="stats">Stats</button>
+    <button data-tab="delta" id="tab-delta-btn">Delta</button>
+    <button data-tab="sparql">SPARQL</button>
+  </div>
+  <section class="tab on" id="tab-explore">
+    <div id="searchwrap">
+      <input id="search" placeholder="Search everything (functions, catalogs, settings, SQLSTATEs…)" autocomplete="off">
+      <div id="results"></div>
+    </div>
+    <div id="nav"><button id="back" title="Back">◀</button><button id="fwd" title="Forward">▶</button><div id="crumbs"></div></div>
+    <div id="detail"><div class="empty">Click a node on the canvas, or search. Every link in this panel is a step you can take: it brings the target onto the canvas and focuses it.</div></div>
+  </section>
+  <section class="tab" id="tab-stats"><div class="empty">Loading…</div></section>
+  <section class="tab" id="tab-delta"><div class="empty">Start the explorer with <code>--compare &lt;other build&gt;</code> to see a delta.</div></section>
+  <section class="tab" id="tab-sparql">
+    <select id="examples"><option value="">Examples…</option></select>
+    <textarea id="query" spellcheck="false"></textarea>
+    <div class="actions"><button id="run">Run (Ctrl+Enter)</button><span class="muted small" id="qstatus"></span></div>
+    <div id="qresult"></div>
+  </section>
+</aside>
+<div id="main">
+  <svg id="graph"></svg>
+  <div id="mode"></div>
+  <div id="toolbar">
+    <div class="seg" id="theme"><button data-v="light">Light</button><button data-v="medium">Medium</button><button data-v="dark">Dark</button></div>
+    <div class="seg" id="labels"><button data-v="auto">Labels: auto</button><button data-v="all">all</button><button data-v="none">off</button></div>
+    <div class="seg" id="deltaseg" style="display:none"><button data-v="on" title="Colour nodes by their change">Delta</button><button data-v="only" title="Dim unchanged nodes">Changed only</button></div>
+    <div class="seg"><button id="fit">Fit</button><button id="clearx" title="Remove nodes added by exploring">Reset</button></div>
+  </div>
+  <div id="legend"></div>
+  <div id="tip"></div>
+  <div id="loading">Loading graph…</div>
+</div>
+<script>
+(() => {
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const api = (path, params) => fetch(path + (params ? '?' + new URLSearchParams(params) : '')).then(r => r.json());
+const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+                set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+const fmt = n => Number(n).toLocaleString();
+
+// ---------------------------------------------------------------- colours
+const KIND = {
+  'pg:BackendSubsystem': '#e8823a', 'pg:ClientProgram': '#d0651c', 'pg:ClientLibrary': '#c3942a',
+  'pg:ProceduralLanguage': '#cfa936', 'pg:Extension': '#9563d4', 'pg:TestModule': '#7f8893',
+  'pg:SharedCode': '#bf9a35', 'pg:PublicHeaders': '#a2762a', 'pg:CodeArea': '#8f98a2',
+  'pg:SystemCatalog': '#2f6fd6', 'pg:CatalogColumn': '#5d9fe6', 'pg:NodeType': '#0f8b8d',
+  'pg:SQLState': '#df5b55', 'pg:SQLStateClass': '#b4342f', 'pg:BuiltinFunction': '#c0589f',
+  'pg:DataType': '#a64f9a', 'pg:Operator': '#8e4aa8', 'pg:ConfigParameter': '#d27c2c',
+  'pg:Hook': '#b8860b', 'pg:WaitEvent': '#6e8b3d', 'pg:LWLock': '#5f7a33', 'pg:Keyword': '#7a7a7a',
+  'cx:Function': '#6a5acd', 'cx:Struct': '#4677c9', 'cx:Field': '#6b93d6', 'cx:SourceFile': '#8d7f62',
+  'cx:HeaderFile': '#a08a5c', 'cx:ExternalSymbol': '#9a9a9a', 'cx:Macro': '#a3779a', 'cx:Prototype': '#5a8f7d',
+};
+const kindColor = k => KIND[k] || (String(k).startsWith('pg:') ? '#7d63b8' : String(k).startsWith('cx:') ? '#3f8f8f' : '#8b949e');
+const short = k => String(k || '').replace(/^(pg|cx|pgcat|rdfs?|owl):/, '');
+const statusDot = s => s && s !== 'unchanged' ? `<span class="status ${s}">${s}</span>` : '';
+
+// ---------------------------------------------------------------- state
+const S = { info: {}, nodes: new Map(), links: [], linkKeys: new Set(), sel: null, hist: [], hpos: -1,
+            hidden: new Set(), base: new Set(), delta: false, deltaOnly: false };
+
+// ---------------------------------------------------------------- theme / toggles
+function setTheme(v) { document.documentElement.dataset.theme = v; store.set('ontosys-theme', v);
+  document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); }
+setTheme(store.get('ontosys-theme') || 'medium');
+document.querySelectorAll('#theme button').forEach(b => b.onclick = () => setTheme(b.dataset.v));
+function setLabels(v) { const svg = $('#graph'); svg.classList.remove('labels-auto', 'labels-all', 'labels-none');
+  svg.classList.add('labels-' + v); store.set('ontosys-labels', v);
+  document.querySelectorAll('#labels button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); }
+setLabels(store.get('ontosys-labels') || 'auto');
+document.querySelectorAll('#labels button').forEach(b => b.onclick = () => setLabels(b.dataset.v));
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+function showTab(t) { document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  document.querySelectorAll('.tab').forEach(s => s.classList.toggle('on', s.id === 'tab-' + t)); }
+function setDelta(on, only) { S.delta = on; S.deltaOnly = only;
+  const svg = $('#graph'); svg.classList.toggle('delta-on', on); svg.classList.toggle('delta-only', only);
+  $('#deltaseg [data-v=on]').classList.toggle('on', on); $('#deltaseg [data-v=only]').classList.toggle('on', only); }
+$('#deltaseg [data-v=on]').onclick = () => setDelta(!S.delta, S.deltaOnly && !S.delta);
+$('#deltaseg [data-v=only]').onclick = () => setDelta(true, !S.deltaOnly);
+
+// ---------------------------------------------------------------- canvas
+const svg = d3.select('#graph');
+const root = svg.append('g');
+const gLinks = root.append('g'), gNodes = root.append('g');
+let width = 0, height = 0;
+const zoom = d3.zoom().scaleExtent([0.05, 8]).on('zoom', e => {
+  root.attr('transform', e.transform);
+  $('#graph').classList.toggle('zoomed', e.transform.k >= 3.5);
+});
+svg.call(zoom).on('dblclick.zoom', null);
+const sim = d3.forceSimulation()
+  .force('link', d3.forceLink().id(d => d.iri).distance(34).strength(.5))
+  .force('charge', d3.forceManyBody().strength(-45).distanceMax(380))
+  .force('collide', d3.forceCollide(7))
+  .force('x', d3.forceX().strength(.035)).force('y', d3.forceY().strength(.035))
+  .on('tick', ticked);
+function resize() { const r = $('#main').getBoundingClientRect(); width = r.width; height = r.height; }
+window.addEventListener('resize', resize); resize();
+
+let linkSel = gLinks.selectAll('line'), nodeSel = gNodes.selectAll('g');
+function draw() {
+  const nodes = [...S.nodes.values()].filter(n => !S.hidden.has(n.kind));
+  const ids = new Set(nodes.map(n => n.iri));
+  const links = S.links.filter(l => ids.has(id(l.source)) && ids.has(id(l.target)));
+  linkSel = gLinks.selectAll('line').data(links, l => id(l.source) + '|' + l.p + '|' + id(l.target))
+    .join('line').attr('class', l => 'link ' + (l.status || ''));
+  nodeSel = gNodes.selectAll('g.node').data(nodes, d => d.iri).join(enter => {
+    const g = enter.append('g').attr('class', 'node')
+      .call(d3.drag().on('start', dragStart).on('drag', dragged).on('end', dragEnd))
+      .on('click', (e, d) => { e.stopPropagation(); go(d.iri); })
+      .on('mouseover', (e, d) => tip(e, d)).on('mousemove', (e, d) => tip(e, d)).on('mouseout', () => $('#tip').style.display = 'none');
+    g.append('circle');
+    g.append('text').attr('x', 8).attr('y', 3);
+    return g;
+  });
+  nodeSel.attr('class', d => `node st-${d.status || 'unchanged'}${d.status === 'removed' ? ' removed' : ''}${S.sel === d.iri ? ' sel' : ''}${d.pin ? ' pin' : ''}`);
+  nodeSel.select('circle').attr('r', d => d.iri === S.sel ? 8 : (d.explored ? 6 : 4.5)).attr('fill', d => kindColor(d.kind));
+  nodeSel.select('text').text(d => d.label || d.short);
+  sim.nodes(nodes); sim.force('link').links(links);
+  sim.alpha(Math.max(sim.alpha(), .3)).restart();
+  legend();
+}
+const id = x => typeof x === 'object' ? x.iri : x;
+function ticked() {
+  linkSel.attr('x1', l => l.source.x).attr('y1', l => l.source.y).attr('x2', l => l.target.x).attr('y2', l => l.target.y);
+  nodeSel.attr('transform', d => `translate(${d.x},${d.y})`);
+}
+function dragStart(e, d) { if (!e.active) sim.alphaTarget(.2).restart(); d.fx = d.x; d.fy = d.y; }
+function dragged(e, d) { d.fx = e.x; d.fy = e.y; }
+function dragEnd(e, d) { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }
+function tip(e, d) { const t = $('#tip'); const r = $('#main').getBoundingClientRect();
+  t.innerHTML = `<b>${esc(d.label || d.short)}</b> <span class="muted">${esc(short(d.kind))}</span> ${statusDot(d.status)}`;
+  t.style.display = 'block'; t.style.left = (e.clientX - r.left + 12) + 'px'; t.style.top = (e.clientY - r.top + 12) + 'px'; }
+function fit(pad = 40, dur = 600) {
+  const ns = [...S.nodes.values()].filter(n => n.x != null && !S.hidden.has(n.kind));
+  if (!ns.length) return;
+  const [x0, x1] = d3.extent(ns, n => n.x), [y0, y1] = d3.extent(ns, n => n.y);
+  const k = Math.min(4, 0.95 / Math.max((x1 - x0 + pad) / width, (y1 - y0 + pad) / height));
+  svg.transition().duration(dur).call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(k).translate(-(x0 + x1) / 2, -(y0 + y1) / 2));
+}
+function focusNode(iri, dur = 650) {
+  const n = S.nodes.get(iri); if (!n || n.x == null) return;
+  const cur = d3.zoomTransform(svg.node()); const k = Math.max(cur.k, 1.8);
+  svg.transition().duration(dur).call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(k).translate(-n.x, -n.y));
+}
+$('#fit').onclick = () => fit();
+$('#clearx').onclick = () => {
+  for (const [k, n] of S.nodes) if (!S.base.has(k)) S.nodes.delete(k);
+  S.links = S.links.filter(l => S.base.has(id(l.source)) && S.base.has(id(l.target)));
+  S.linkKeys = new Set(S.links.map(l => id(l.source) + '|' + l.p + '|' + id(l.target)));
+  draw(); fit();
+};
+svg.on('click', () => { $('#results').style.display = 'none'; });
+
+function legend() {
+  const counts = new Map();
+  for (const n of S.nodes.values()) counts.set(n.kind, (counts.get(n.kind) || 0) + 1);
+  $('#legend').innerHTML = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([k, c]) =>
+    `<span data-k="${esc(k)}" class="${S.hidden.has(k) ? 'off' : ''}" title="click to hide/show"><i class="dot" style="background:${kindColor(k)}"></i>${esc(short(k))} <span class="muted">${fmt(c)}</span></span>`).join('');
+  $('#legend').querySelectorAll('span[data-k]').forEach(s => s.onclick = () => {
+    const k = s.dataset.k; S.hidden.has(k) ? S.hidden.delete(k) : S.hidden.add(k); draw(); });
+}
+
+// add a node (brief) to the canvas, near `near` if given
+function viewCentre() {
+  const t = d3.zoomTransform(svg.node()); const [x, y] = t.invert([width / 2, height / 2]); return { x, y };
+}
+function addNode(b, near, around) {
+  let n = S.nodes.get(b.iri);
+  if (!n) {
+    let p = near && S.nodes.get(near);
+    if (!p && around && around.length) {
+      const pts = around.map(i => S.nodes.get(i)).filter(q => q && q.x != null);
+      if (pts.length) p = { x: d3.mean(pts, q => q.x), y: d3.mean(pts, q => q.y) };
+    }
+    if (!p) p = viewCentre();
+    n = { iri: b.iri, label: b.label, short: b.short, kind: b.kind, status: b.status, explored: true,
+          x: p ? p.x + (Math.random() - .5) * 60 : undefined, y: p ? p.y + (Math.random() - .5) * 60 : undefined };
+    S.nodes.set(b.iri, n);
+  }
+  return n;
+}
+function addLink(s, p, t, status) {
+  const k = s + '|' + p + '|' + t;
+  if (S.linkKeys.has(k)) return;
+  S.linkKeys.add(k); S.links.push({ source: s, target: t, p, status });
+}
+
+// ---------------------------------------------------------------- navigation
+async function go(iri, from) {
+  if (!iri) return;
+  if (S.hist[S.hpos] !== iri) { S.hist = S.hist.slice(0, S.hpos + 1); S.hist.push(iri); S.hpos = S.hist.length - 1; }
+  await select(iri, from);
+}
+$('#back').onclick = () => { if (S.hpos > 0) { S.hpos--; select(S.hist[S.hpos]); } };
+$('#fwd').onclick = () => { if (S.hpos < S.hist.length - 1) { S.hpos++; select(S.hist[S.hpos]); } };
+function crumbs() {
+  $('#back').disabled = S.hpos <= 0; $('#fwd').disabled = S.hpos >= S.hist.length - 1;
+  $('#crumbs').innerHTML = S.hist.slice(Math.max(0, S.hpos - 4), S.hpos + 1).map((iri, i, a) => {
+    const n = S.nodes.get(iri); const label = n ? (n.label || n.short) : iri.split('/').pop();
+    return `<span data-i="${esc(iri)}" title="${esc(label)}">${esc(label)}</span>${i < a.length - 1 ? '<span class="muted">›</span>' : ''}`;
+  }).join('');
+  $('#crumbs').querySelectorAll('span[data-i]').forEach(s => s.onclick = () => go(s.dataset.i));
+}
+
+let current = null;
+async function select(iri, from) {
+  showTab('explore');
+  const d = await api('/api/node', { iri, n: 30 });
+  if (d.error) { $('#detail').innerHTML = `<div class="empty">${esc(d.error)}</div>`; return; }
+  current = d;
+  // bring onto the canvas: the node, plus the link we travelled along
+  const drawnNeighbours = [...d.outgoing, ...d.incoming].flatMap(g => g.items.map(t => t.iri)).filter(i => S.nodes.has(i));
+  addNode({ iri: d.iri, label: d.label, short: d.short, kind: d.kind, status: d.status }, from && from.iri, drawnNeighbours);
+  if (from) from.dir === 'in' ? addLink(d.iri, from.p, from.iri, null) : addLink(from.iri, from.p, d.iri, null);
+  // neighbours already drawn get their links shown
+  for (const g of d.outgoing) for (const t of g.items) if (S.nodes.has(t.iri)) addLink(d.iri, g.p, t.iri, null);
+  for (const g of d.incoming) for (const t of g.items) if (S.nodes.has(t.iri)) addLink(t.iri, g.p, d.iri, null);
+  for (const n of S.nodes.values()) n.pin = false;
+  S.nodes.get(iri).pin = true;
+  S.sel = iri; draw();
+  highlight(d);
+  setTimeout(() => focusNode(iri), 60);
+  try { history.replaceState(null, '', '#' + encodeURIComponent(iri)); } catch (e) {}
+  renderDetail(d); crumbs();
+}
+function highlight(d) {
+  const nb = new Set([d.iri]);
+  d.outgoing.forEach(g => g.items.forEach(t => nb.add(t.iri)));
+  d.incoming.forEach(g => g.items.forEach(t => nb.add(t.iri)));
+  for (const n of S.nodes.values()) if (nb.has(n.iri)) n.pin = true;
+  nodeSel.classed('pin', n => n.pin);
+  linkSel.classed('hl', l => id(l.source) === d.iri || id(l.target) === d.iri);
+}
+
+function itemRow(t, from) {
+  return `<div class="item" data-iri="${esc(t.iri)}" data-from='${esc(JSON.stringify(from))}'>
+    <i class="dot" style="background:${kindColor(t.kind)};${t.status && t.status !== 'unchanged' ? 'border-color:var(--' + t.status + ')' : ''}"></i>
+    <span class="lbl">${esc(t.label || t.short)}</span><span class="k">${esc(short(t.kind))}</span></div>`;
+}
+function groupHtml(g, dir, d) {
+  const arrow = dir === 'in' ? '←' : '→';
+  const name = g.label || short(g.short);
+  const shown = g.items.length;
+  return `<div class="group" data-p="${esc(g.p)}" data-dir="${dir}">
+    <div class="ghead" title="${esc(g.comment || g.short)}"><span>${arrow}</span><span class="p">${esc(name)}</span><span class="n">${fmt(g.total)}</span>
+      <button class="addall" title="Draw these on the canvas">draw</button></div>
+    <div class="items">${g.items.map(t => itemRow(t, { iri: d.iri, p: g.p, dir })).join('')}</div>
+    ${g.total > shown ? `<div class="more" data-off="${shown}">show ${fmt(Math.min(50, g.total - shown))} more of ${fmt(g.total - shown)}…</div>` : ''}
+  </div>`;
+}
+function renderDetail(d) {
+  const roles = d.types.filter(t => t !== d.kind);
+  const ground = d.grounding.filter(g => g.comment || g.groundedIn).map(g =>
+    `<div class="ground"><b>${esc(g.label || short(g.class))}</b> ${g.comment ? '— ' + esc(g.comment) : ''}${g.groundedIn ? `<div class="small muted">grounded in <b>${esc(g.groundedIn)}</b></div>` : ''}</div>`).join('');
+  const delta = d.delta && d.delta.changes.length ? `<h3>Change ${esc(S.info.baseline || '')} → ${esc(S.info.version || '')}${d.delta.kind ? ' · ' + esc(d.delta.kind) : ''}</h3>` +
+    d.delta.changes.map(c => c.p === 'cx:bodyHash' ? `<div class="change"><span class="p">code</span> <span class="muted">changed (token-level body hash differs)</span></div>` : `<div class="change"><span class="p">${esc(short(c.p))}</span>
+      ${c.removed.map(v => `<div class="rm">− <code>${esc(v)}</code></div>`).join('')}
+      ${c.added.map(v => `<div class="ad">+ <code>${esc(v)}</code></div>`).join('')}</div>`).join('') : '';
+  const props = d.properties.length ? `<h3>Properties</h3><div class="kv">${d.properties.map(p =>
+    `<div class="k" title="${esc(p.short)}">${esc(p.label || short(p.short))}</div><div class="v ${p.value.length > 160 ? 'clip' : ''}">${esc(p.value)}</div>`).join('')}</div>` : '';
+  $('#detail').innerHTML = `<div class="card">
+      <h2>${esc(d.label || d.short)}</h2>
+      <div class="badges"><span class="badge kind" style="background:${kindColor(d.kind)}">${esc(short(d.kind))}</span>
+        ${roles.map(r => `<span class="badge">${esc(short(r))}</span>`).join('')} ${statusDot(d.status)}
+        ${d.side === 'baseline' ? `<span class="badge">only in ${esc(S.info.baseline || 'baseline')}</span>` : ''}</div>
+      ${d.area ? `<div class="small muted">in ${esc(d.area)}</div>` : ''}
+      <div class="iri">${esc(d.iri)}</div>
+      <div class="actions"><button id="act-focus">Focus</button><button id="act-expand">Draw all neighbours</button>
+        <button id="act-sparql">Query in SPARQL</button></div>
+    </div>
+    ${ground ? `<h3>Grounding</h3>${ground}` : ''}
+    ${delta}
+    ${d.outgoing.length ? `<h3>Links out — travel from here</h3>${d.outgoing.map(g => groupHtml(g, 'out', d)).join('')}` : ''}
+    ${d.incoming.length ? `<h3>Links in — who points here</h3>${d.incoming.map(g => groupHtml(g, 'in', d)).join('')}` : ''}
+    ${props}`;
+  $('#act-focus').onclick = () => focusNode(d.iri);
+  $('#act-expand').onclick = () => drawAll(d);
+  $('#act-sparql').onclick = () => { $('#query').value = `SELECT ?p ?o WHERE {\n  <${d.iri}> ?p ?o\n}`; showTab('sparql'); runQuery(); };
+  bindItems($('#detail'));
+  $('#detail').querySelectorAll('.addall').forEach(b => b.onclick = e => {
+    e.stopPropagation(); const grp = b.closest('.group');
+    grp.querySelectorAll('.item').forEach(it => addFromItem(it)); draw(); highlight(current); });
+  $('#detail').querySelectorAll('.more').forEach(m => m.onclick = async () => {
+    const grp = m.closest('.group'); const off = +m.dataset.off;
+    const r = await api('/api/links', { iri: d.iri, p: grp.dataset.p, dir: grp.dataset.dir, offset: off, limit: 50 });
+    const box = grp.querySelector('.items');
+    box.insertAdjacentHTML('beforeend', r.items.map(t => itemRow(t, { iri: d.iri, p: grp.dataset.p, dir: grp.dataset.dir })).join(''));
+    bindItems(box);
+    const g = (grp.dataset.dir === 'in' ? d.incoming : d.outgoing).find(x => x.p === grp.dataset.p);
+    const shown = off + r.items.length;
+    if (!g || shown >= g.total || !r.items.length) m.remove(); else { m.dataset.off = shown; m.textContent = `show ${fmt(Math.min(50, g.total - shown))} more of ${fmt(g.total - shown)}…`; }
+  });
+  $('#detail').querySelectorAll('.v.clip').forEach(v => v.onclick = () => v.classList.toggle('clip'));
+}
+function bindItems(el) {
+  el.querySelectorAll('.item').forEach(it => it.onclick = () => go(it.dataset.iri, JSON.parse(it.dataset.from)));
+}
+function addFromItem(it) {
+  const from = JSON.parse(it.dataset.from);
+  const kind = it.querySelector('.k').textContent;
+  const t = { iri: it.dataset.iri, label: it.querySelector('.lbl').textContent, kind: guessKind(it.dataset.iri, kind) };
+  addNode(t, from.iri);
+  from.dir === 'in' ? addLink(t.iri, from.p, from.iri, null) : addLink(from.iri, from.p, t.iri, null);
+}
+function guessKind(iri, shortKind) {
+  for (const k of Object.keys(KIND)) if (short(k) === shortKind) return k;
+  return shortKind;
+}
+function drawAll(d) {
+  for (const g of d.outgoing) for (const t of g.items) { addNode(t, d.iri); addLink(d.iri, g.p, t.iri, null); }
+  for (const g of d.incoming) for (const t of g.items) { addNode(t, d.iri); addLink(t.iri, g.p, d.iri, null); }
+  draw(); highlight(d);
+}
+
+// ---------------------------------------------------------------- search
+let sTimer = null, sIdx = -1;
+$('#search').addEventListener('input', () => { clearTimeout(sTimer); sTimer = setTimeout(doSearch, 180); });
+$('#search').addEventListener('keydown', e => {
+  const rows = [...document.querySelectorAll('#results .row')];
+  if (e.key === 'ArrowDown') { sIdx = Math.min(rows.length - 1, sIdx + 1); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { sIdx = Math.max(0, sIdx - 1); e.preventDefault(); }
+  else if (e.key === 'Enter') { const r = rows[Math.max(0, sIdx)]; if (r) { r.click(); } return; }
+  else if (e.key === 'Escape') { $('#results').style.display = 'none'; return; }
+  rows.forEach((r, i) => r.classList.toggle('hl', i === sIdx));
+});
+async function doSearch() {
+  const q = $('#search').value.trim(); sIdx = -1;
+  if (!q) { $('#results').style.display = 'none'; return; }
+  const r = await api('/api/search', { q, limit: 40 });
+  $('#results').innerHTML = (r.items.length ? r.items.map(t => `<div class="row" data-iri="${esc(t.iri)}">
+      <i class="dot" style="background:${kindColor(t.kind)}"></i><span>${esc(t.label || t.short)}</span>
+      <span class="muted small" style="margin-left:auto">${esc(short(t.kind))}</span>${statusDot(t.status)}</div>`).join('')
+      : '<div class="row muted">no matches</div>') + (r.total > r.items.length ? `<div class="row muted small">${fmt(r.total)} matches — refine</div>` : '');
+  $('#results').style.display = 'block';
+  $('#results').querySelectorAll('.row[data-iri]').forEach(row => row.onclick = () => { $('#results').style.display = 'none'; go(row.dataset.iri); });
+}
+
+// ---------------------------------------------------------------- stats
+function cellHtml(c) {
+  if (!c) return '';
+  if (c.type === 'iri') return `<span class="go" data-iri="${esc(c.value)}" title="${esc(c.value)}">${esc(c.label || c.short)}</span>`;
+  return esc(c.value);
+}
+function tableHtml(vars, rows) {
+  return `<table><tr>${vars.map(v => `<th>${esc(v)}</th>`).join('')}</tr>${rows.map(r => `<tr>${vars.map(v => {
+    const c = r[v]; const num = c && c.type === 'literal' && /^-?\d+(\.\d+)?$/.test(c.value);
+    return `<td class="${num ? 'num' : ''}">${num ? fmt(c.value) : cellHtml(c)}</td>`; }).join('')}</tr>`).join('')}</table>`;
+}
+function bindGo(el) { el.querySelectorAll('.go').forEach(g => g.onclick = () => go(g.dataset.iri)); }
+async function loadStats() {
+  const r = await api('/api/aggregates');
+  const classes = r.items.find(a => a.id === 'classes');
+  const count = c => { const row = classes && classes.rows.find(x => x.class.short === c); return row ? +row.count.value : 0; };
+  $('#numbers').innerHTML = [
+    [S.info.triples, 'triples'], [count('cx:Function'), 'C functions'], [count('pg:BuiltinFunction'), 'SQL functions'],
+    [count('pg:SystemCatalog'), 'catalogs'], [count('pg:ConfigParameter'), 'settings'], [count('pg:NodeType'), 'node types'],
+  ].filter(x => x[0]).map(([n, l]) => `<div><b>${fmt(n)}</b><span>${l}</span></div>`).join('');
+  $('#tab-stats').innerHTML = `<div class="muted small">Computed with SPARQL over the full graph (${fmt(S.info.triples)} triples) at startup. Click any entity to travel to it.</div>` +
+    r.items.map(a => a.error ? `<div class="agg"><h4>${esc(a.title)}</h4><div class="muted">${esc(a.error)}</div></div>` :
+      `<div class="agg"><h3>${esc(a.title)}</h3><div class="muted small">${esc(a.about)} <span class="go-q" data-q="${esc(a.query)}" style="cursor:pointer;color:var(--accent)">query ↗</span> · ${a.elapsed_ms} ms</div>${tableHtml(a.vars, a.rows)}</div>`).join('');
+  bindGo($('#tab-stats'));
+  $('#tab-stats').querySelectorAll('.go-q').forEach(q => q.onclick = () => { $('#query').value = q.dataset.q; showTab('sparql'); runQuery(); });
+  const ex = $('#examples');
+  r.items.filter(a => a.query).forEach(a => { const o = document.createElement('option'); o.value = a.query; o.textContent = a.title; ex.appendChild(o); });
+}
+
+// ---------------------------------------------------------------- delta
+async function loadDelta() {
+  const d = await api('/api/delta');
+  if (!d) { $('#tab-delta-btn').style.display = 'none'; return; }
+  $('#deltaseg').style.display = 'flex'; setDelta(true, false);
+  const kinds = Object.entries(d.function_change_kinds || {});
+  $('#tab-delta').innerHTML = `<div class="card"><b>${esc(d.baseline)} → ${esc(d.current)}</b>
+      <div class="small muted">${fmt(d.triples.baseline)} → ${fmt(d.triples.current)} triples · ${fmt(d.entities_differ)} entities differ · ${fmt(d.moves)} functions moved unchanged</div></div>
+    <h3>By kind — click a count to list</h3>
+    <table><tr><th>Kind</th><th class="num">added</th><th class="num">removed</th><th class="num">changed</th></tr>
+    ${d.sections.map(s => `<tr><td>${esc(s.title)}</td>${['added', 'removed', 'changed'].map(st =>
+      `<td class="num"><span class="cnt ${s[st] ? '' : 'zero'}" data-c="${esc(s.class)}" data-s="${st}" data-t="${esc(s.title)}">${s[st] ? fmt(s[st]) : '·'}</span></td>`).join('')}</tr>`).join('')}</table>
+    ${kinds.length ? `<h3>Changed C functions by kind of change</h3><table>${kinds.map(([k, n]) => `<tr><td>${esc(k)}</td><td class="num">${fmt(n)}</td></tr>`).join('')}</table>` : ''}
+    <div id="dlist"></div>`;
+  $('#tab-delta').querySelectorAll('.cnt:not(.zero)').forEach(c => c.onclick = () => deltaList(c.dataset.c, c.dataset.s, c.dataset.t, 0));
+  // diff examples for the SPARQL tab
+  const ex = $('#examples');
+  [['Triples removed (baseline MINUS current)', `SELECT ?s ?p ?o WHERE {\n  GRAPH <urn:ontosys:baseline> { ?s ?p ?o }\n  MINUS { ?s ?p ?o }\n} LIMIT 200`],
+   ['Count removed / added triples', `SELECT ?removed ?added WHERE {\n  { SELECT (COUNT(*) AS ?removed) WHERE { GRAPH <urn:ontosys:baseline> { ?s ?p ?o } MINUS { ?s ?p ?o } } }\n  { SELECT (COUNT(*) AS ?added) WHERE { ?s ?p ?o MINUS { GRAPH <urn:ontosys:baseline> { ?s ?p ?o } } } }\n}`],
+   ['Functions that no longer raise an error condition', `PREFIX pg: <https://ontosys.io/ns/pg#>\nPREFIX cx: <https://ontosys.io/ns/c#>\nSELECT ?f ?s WHERE {\n  GRAPH <urn:ontosys:baseline> { ?f pg:mayRaise ?s }\n  ?f a cx:Function .\n  MINUS { ?f pg:mayRaise ?s }\n}`]]
+    .forEach(([t, q]) => { const o = document.createElement('option'); o.value = q; o.textContent = 'Δ ' + t; ex.appendChild(o); });
+}
+async function deltaList(cls, status, title, offset) {
+  const r = await api('/api/delta/list', { class: cls, status, offset, limit: 60 });
+  $('#dlist').innerHTML = `<h3>${esc(title)} — ${status} (${fmt(r.total)})</h3>
+    <div class="actions"><button id="drawlist">Draw these</button></div>` +
+    r.items.map(t => `<div class="item" data-iri="${esc(t.iri)}"><i class="dot" style="background:${kindColor(t.kind)};border-color:var(--${status})"></i>
+      <span class="lbl">${esc(t.label || t.short)}</span><span class="k">${esc(t.change || t.area || '')}</span></div>`).join('') +
+    `<div class="actions">${offset > 0 ? '<button id="dprev">◀ prev</button>' : ''}${offset + r.items.length < r.total ? '<button id="dnext">next ▶</button>' : ''}<span class="muted small">${offset + 1}–${offset + r.items.length} of ${fmt(r.total)}</span></div>`;
+  $('#dlist').querySelectorAll('.item').forEach(it => it.onclick = () => go(it.dataset.iri));
+  $('#drawlist').onclick = () => { r.items.forEach(t => addNode(t)); draw(); setTimeout(fit, 900); };
+  if ($('#dprev')) $('#dprev').onclick = () => deltaList(cls, status, title, Math.max(0, offset - 60));
+  if ($('#dnext')) $('#dnext').onclick = () => deltaList(cls, status, title, offset + 60);
+  $('#dlist').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ---------------------------------------------------------------- sparql
+$('#query').value = `PREFIX pg: <https://ontosys.io/ns/pg#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?sqlstate (COUNT(DISTINCT ?f) AS ?functions) WHERE {
+  ?f pg:mayRaise ?sqlstate
+} GROUP BY ?sqlstate ORDER BY DESC(?functions) LIMIT 20`;
+$('#examples').onchange = e => { if (e.target.value) { $('#query').value = e.target.value; runQuery(); } };
+$('#run').onclick = () => runQuery();
+$('#query').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runQuery(); } });
+async function runQuery() {
+  $('#qstatus').textContent = 'running…';
+  const r = await fetch('/api/sparql?limit=2000', { method: 'POST', body: $('#query').value }).then(x => x.json());
+  if (r.error) { $('#qstatus').textContent = ''; $('#qresult').innerHTML = `<div class="card" style="color:var(--removed)">${esc(r.error)}</div>`; return; }
+  if (r.kind === 'ask') { $('#qstatus').textContent = `${r.elapsed_ms} ms`; $('#qresult').innerHTML = `<div class="card"><b>${r.boolean}</b></div>`; return; }
+  $('#qstatus').textContent = `${fmt(r.rows.length)} rows${r.truncated ? ' (truncated)' : ''} · ${r.elapsed_ms} ms`;
+  $('#qresult').innerHTML = tableHtml(r.vars, r.rows);
+  bindGo($('#qresult'));
+}
+
+// ---------------------------------------------------------------- boot
+async function boot() {
+  S.info = await api('/api/info');
+  $('#subtitle').textContent = `${S.info.project || ''} ${S.info.version || ''}${S.info.baseline ? ' · compared with ' + S.info.baseline : ''}`;
+  const v = await api('/api/view');
+  for (const n of v.nodes) { S.nodes.set(n.iri, { ...n }); S.base.add(n.iri); }
+  for (const e of v.edges) addLink(e.source, e.p, e.target, e.status);
+  $('#mode').innerHTML = v.mode === 'overview'
+    ? `Overview: grounded structure (${fmt(v.nodes.length)} of ${fmt(S.info.triples)} triples' entities). Search or travel links to bring in anything else.`
+    : `Full graph (${fmt(v.nodes.length)} entities).`;
+  $('#loading').style.display = 'none';
+  draw();
+  setTimeout(() => fit(40, 800), 2500);
+  loadStats(); loadDelta();
+  const h = decodeURIComponent(location.hash.slice(1));
+  if (h.startsWith('http')) go(h);
+}
+boot();
+})();
+</script>
+</body>
+</html>

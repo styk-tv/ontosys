@@ -88,9 +88,14 @@ enum Commands {
         /// Open browser automatically
         #[arg(short, long)]
         open: bool,
+
+        /// Also load another build (repository with .ontosys/, or a graph.nt)
+        /// as the baseline, to explore the delta
+        #[arg(short, long)]
+        compare: Option<PathBuf>,
     },
 
-    /// Execute a SPARQL query
+    /// Run a SPARQL query against the built graph
     Query {
         /// SPARQL query string
         query: String,
@@ -170,8 +175,8 @@ async fn main() -> anyhow::Result<()> {
         Commands::Stats => {
             cli::stats::run(&repo_path).await
         }
-        Commands::Serve { port, open } => {
-            cli::serve::run(&repo_path, port, open).await
+        Commands::Serve { port, open, compare } => {
+            cli::serve::run(&repo_path, port, open, compare).await
         }
         Commands::Query { query, format } => {
             cli::query::run(&repo_path, &query, &format).await

@@ -11,6 +11,7 @@ pub mod export;
 pub mod watch;
 pub mod clean;
 pub mod diff;
+pub mod store;
 
 use std::path::Path;
 use console::style;
