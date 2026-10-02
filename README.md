@@ -69,8 +69,12 @@ ontosys build --jobs 8
 # Start server on custom port
 ontosys serve --port 8080 --open
 
-# Query for functions
+# Query for functions (simple pattern match over graph.json — not SPARQL;
+# for SPARQL, load graph.nt into an RDF store, see below)
 ontosys query "function"
+
+# Compare two builds of the same project semantically
+ontosys diff ../project-v1 ../project-v2 --out report.md --json report.json
 
 # Export as Turtle
 ontosys export ./graph.ttl --format turtle
@@ -182,6 +186,70 @@ reported as moves.
 The project name in IRIs comes from `project` in `.ontosys/config.json`, else
 the basename of `remote.origin.url`, else the directory name — so two
 worktrees of one repository produce comparable graphs.
+
+## Loading into an RDF Store
+
+`graph.nt` is canonical N-Triples — byte-sorted, de-duplicated, no blank
+nodes — so its SHA-256 is a content address for the graph. It is
+byte-identical to pgRDF's own canonical export of the loaded graph, which
+makes the producer's digest usable for content-addressed admission and makes
+"was the load lossless?" a hash comparison:
+
+```bash
+sha256sum .ontosys/data/graph.nt      # equals the store's canonical-N-Triples digest after loading
+```
+
+pgRDF, from SQL (the file must be readable by the database server):
+
+```sql
+SELECT pgrdf.add_graph('urn:ontosys:myproject:v1');
+SELECT pgrdf.load_turtle('/path/visible/to/server/graph.ttl',
+                         pgrdf.graph_id('urn:ontosys:myproject:v1'));
+```
+
+or through the pgRDF MCP server's `pgrdf_import` (`file` + `expect_sha256`).
+Load each version into its own named graph and scope every query with
+`GRAPH <…>`. Cross-version questions are cheapest as single-triple `MINUS`:
+
+```sparql
+SELECT ?s ?p ?o WHERE {
+  GRAPH <urn:ontosys:myproject:v1> { ?s ?p ?o }
+  MINUS { GRAPH <urn:ontosys:myproject:v2> { ?s ?p ?o } }
+}
+```
+
+On PostgreSQL 19 (≈1.1M triples per version) this reproduces `ontosys diff`'s
+line-level delta exactly (22,584 removed / 15,188 added / 1,102,763 common
+between 19beta3 and 19beta4). Unbounded property paths over `cx:calls`
+(`cx:calls+`) are expensive on graphs this size — the exact function-only
+closure of PostgreSQL 19 is ≈21.5M pairs — so prefer bounded hops, or compute
+reachability outside the store.
+
+## Known Limitations
+
+- **Call resolution across link units.** The last-resort rule — "the single
+  non-static definition anywhere" — ignores which binary the caller links
+  into, and ignores that a callee may be a function-like macro visible
+  through the caller's includes. On PostgreSQL 19 this mislinks ≈626 calls
+  (extension and PL code calling `pfree`/`palloc`/`pstrdup` resolve to the
+  frontend `src/common/fe_memutils.c` instead of the backend allocator) and
+  398 calls to the `pg_fatal` macro (resolved to `pg_upgrade`'s function of
+  the same name). Planned fix: no cross-link-unit fallback (unresolved →
+  `cx:ExternalSymbol`), macro calls on their own predicate, link units from
+  build introspection when available, and `cx:callsExternal` for external
+  symbols so `cx:calls` is function→function only.
+- **Macro-generated and `#ifdef`-split definitions** are not seen (≈0.08% of
+  function definitions on PostgreSQL 19, measured against an independent
+  count).
+- **Grounding is code, not configuration.** PostgreSQL knowledge lives in
+  `src/grounding/postgres.rs`; the intended direction is a declarative
+  profile so other projects can be grounded without code changes. Because
+  output is deterministic, a profile-driven build must reproduce today's
+  `graph.nt` byte for byte on the same sources.
+- `ontosys query` is a simple pattern matcher over `graph.json`, and
+  `graph.json` is not written above 250k triples. Use an RDF store for SPARQL.
+- The `type_state_demo` and `ingest_repo` examples do not compile (they
+  predate the current module layout).
 
 ## Ontology Mappings
 
@@ -321,7 +389,8 @@ Edit `.ontosys/config.json` to customize:
 
 ```json
 {
-  "languages": ["rust", "python", "typescript", "javascript"],
+  "project": "postgres",
+  "languages": ["rust", "python", "typescript", "javascript", "c"],
   "exclude_patterns": [
     "**/node_modules/**",
     "**/target/**",
@@ -332,6 +401,10 @@ Edit `.ontosys/config.json` to customize:
   "extract_calls": true
 }
 ```
+
+`project` is optional: it fixes the name used in instance IRIs (default: the
+`remote.origin.url` basename, else the directory name). `c` is added by
+`ontosys init` when the repository contains `.c` files.
 
 ## References
 
