@@ -32,6 +32,16 @@ use std::fs;
 use std::path::Path;
 use std::sync::OnceLock;
 
+/// Classes drawn by the browser view when the full graph is too large to render:
+/// the grounded structure of PostgreSQL (code-area tree, catalogs with their
+/// columns and lookups, node-type inheritance, SQLSTATE classes) without the
+/// tens of thousands of C functions hanging off it.
+pub const OVERVIEW_CLASSES: &[&str] = &[
+    "CodeArea", "BackendSubsystem", "ClientProgram", "ClientLibrary", "ProceduralLanguage",
+    "Extension", "TestModule", "SharedCode", "PublicHeaders", "SystemCatalog", "CatalogColumn",
+    "NodeType", "SQLState", "SQLStateClass",
+];
+
 pub fn detect(root: &Path) -> bool {
     root.join("src/include/catalog/pg_proc.dat").is_file() && root.join("src/backend").is_dir()
 }

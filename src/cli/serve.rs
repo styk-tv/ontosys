@@ -499,6 +499,21 @@ fn generate_visualization_html() -> String {
             'Enum': '#d29922',
             'Import': '#8b949e',
             'Project': '#f85149',
+            // PostgreSQL grounding overview
+            'BackendSubsystem': '#f0883e',
+            'ClientProgram': '#db6d28',
+            'ClientLibrary': '#bf8700',
+            'ProceduralLanguage': '#e3b341',
+            'Extension': '#a371f7',
+            'TestModule': '#6e7681',
+            'SharedCode': '#d29922',
+            'PublicHeaders': '#9e6a03',
+            'CodeArea': '#7d8590',
+            'SystemCatalog': '#1f6feb',
+            'CatalogColumn': '#58a6ff',
+            'NodeType': '#3fb950',
+            'SQLState': '#ff7b72',
+            'SQLStateClass': '#da3633',
             'unknown': '#484f58'
         };
 

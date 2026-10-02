@@ -246,6 +246,16 @@ pub async fn run(
             style("→").dim(),
             fs::metadata(&json_path)?.len()
         );
+    } else if postgres_tree {
+        let overview = overview_subset(&triples, postgres::OVERVIEW_CLASSES);
+        let mut jsonld = triples_to_jsonld(&overview, project_id);
+        jsonld["view"] = serde_json::json!(format!(
+            "overview: grounded PostgreSQL structure only ({} of {} triples); query graph.nt for the full graph",
+            overview.len(), triples.len()
+        ));
+        fs::write(&json_path, serde_json::to_string_pretty(&jsonld)?)?;
+        println!("  {} graph.json (overview: {} of {} triples — full graph too large to draw)",
+            style("→").dim(), overview.len(), triples.len());
     } else {
         let _ = fs::remove_file(&json_path);
         println!("  {} graph.json skipped ({} triples > {} visualization limit)",
@@ -431,7 +441,33 @@ fn process_file(
     parser.parse_file(path, &source).map_err(|e| anyhow::anyhow!("{}", e))
 }
 
-/// Above this many triples graph.json (browser visualization) is not written.
+/// Triples of entities typed with one of `classes` (in the pg: namespace), keeping
+/// only links between such entities, so the drawing stays connected and small.
+fn overview_subset(triples: &TripleSet, classes: &[&str]) -> TripleSet {
+    use crate::ontology::{Term, PG};
+    use std::collections::HashSet;
+    let wanted: HashSet<String> = classes.iter().map(|c| PG.iri(c).as_str().to_string()).collect();
+    let rdf_type = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+    let keep: HashSet<String> = triples
+        .iter()
+        .filter(|t| t.predicate.as_str() == rdf_type)
+        .filter_map(|t| match (&t.subject, &t.object) {
+            (Term::Iri(s), Term::Iri(o)) if wanted.contains(o.as_str()) => Some(s.as_str().to_string()),
+            _ => None,
+        })
+        .collect();
+    triples
+        .iter()
+        .filter(|t| matches!(&t.subject, Term::Iri(s) if keep.contains(s.as_str())))
+        .filter(|t| match &t.object {
+            Term::Iri(o) => t.predicate.as_str() == rdf_type || keep.contains(o.as_str()),
+            _ => true,
+        })
+        .cloned()
+        .collect()
+}
+
+/// Above this many triples the full graph.json (browser visualization) is not written.
 const MAX_VIZ_TRIPLES: usize = 250_000;
 
 #[derive(serde::Serialize)]
