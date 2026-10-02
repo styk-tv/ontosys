@@ -35,7 +35,7 @@ use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "ontosys")]
-#[command(author = "OntoSys Team")]
+#[command(author = "Peter Styk")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Multi-language code knowledge graph system", long_about = None)]
 #[command(propagate_version = true)]

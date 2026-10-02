@@ -423,4 +423,4 @@ Edit `.ontosys/config.json` to customize:
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

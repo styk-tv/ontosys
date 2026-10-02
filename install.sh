@@ -5,12 +5,9 @@
 #   VERSION=v0.1.0 sh install.sh                   # pin a tag
 #   PREFIX=$HOME/.local/bin sh install.sh          # choose the install dir
 #
-# NOTE ON PRIVATE REPOS: while styk-tv/ontosys is private, release assets are NOT
-# anonymously downloadable — the plain releases/download URL returns 404 without
-# credentials. This script therefore authenticates, in order of preference:
-#   1. the `gh` CLI, if installed and logged in
-#   2. $GH_TOKEN / $GITHUB_TOKEN, via the REST asset endpoint
-# Once the repo is public, the unauthenticated path below starts working as-is.
+# Downloads anonymously from GitHub Releases. If the `gh` CLI is installed and
+# logged in it is used instead, and $GH_TOKEN / $GITHUB_TOKEN are honoured via the
+# REST asset endpoint — useful for forks or mirrors that are not public.
 set -eu
 
 REPO="${REPO:-styk-tv/ontosys}"
@@ -52,8 +49,8 @@ else
   [ "$VERSION" = latest ] && api="${api}/latest" || api="${api}/tags/${VERSION}"
 
   if [ -n "$token" ]; then
-    # Resolve the numeric asset id, then stream the asset itself. The browser
-    # download URL will not serve a private asset even with a token; this will.
+    # Resolve the numeric asset id, then stream the asset itself (works for
+    # non-public repositories too, unlike the browser download URL).
     id="$(curl -fsSL -H "Authorization: Bearer $token" \
             -H 'Accept: application/vnd.github+json' "$api" \
           | python3 -c "import json,sys
@@ -64,14 +61,14 @@ print(m[0] if m else '')")" || die "could not read release $VERSION"
     curl -fsSL -H "Authorization: Bearer $token" -H 'Accept: application/octet-stream' \
       -o "$tmp/$asset" "https://api.github.com/repos/${REPO}/releases/assets/${id}"
   else
-    # Anonymous path — works only once the repo is public.
+    # Anonymous path.
     if [ "$VERSION" = latest ]; then
       url="https://github.com/${REPO}/releases/latest/download/${asset}"
     else
       url="https://github.com/${REPO}/releases/download/${VERSION}/${asset}"
     fi
     curl -fsSL -o "$tmp/$asset" "$url" \
-      || die "download failed. $REPO is private — install the gh CLI, or set GH_TOKEN."
+      || die "download failed from $url (for a non-public repository: install the gh CLI or set GH_TOKEN)"
   fi
 fi
 

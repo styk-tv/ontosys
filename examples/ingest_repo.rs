@@ -4,7 +4,7 @@
 //!
 //! Run with: `cargo run --example ingest_repo -- /path/to/rust/project`
 
-use graph_transformer::prelude::*;
+use ontosys::prelude::*;
 use std::env;
 use std::path::PathBuf;
 

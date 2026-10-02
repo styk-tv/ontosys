@@ -185,11 +185,16 @@ mod features {
     pub struct HNil;
     pub struct HCons<H, T>(PhantomData<(H, T)>);
 
-    /// Check if feature list contains a feature
-    pub trait HasFeature<F: Feature> {}
+    /// Position of a feature in the list (frunk-style index), which keeps the
+    /// two impls below from overlapping: `Here` = head, `There<I>` = in the tail.
+    pub struct Here;
+    pub struct There<I>(PhantomData<I>);
 
-    impl<F: Feature, T> HasFeature<F> for HCons<F, T> {}
-    impl<F: Feature, H, T: HasFeature<F>> HasFeature<F> for HCons<H, T> {}
+    /// Check if feature list contains a feature (the index is inferred)
+    pub trait HasFeature<F: Feature, I> {}
+
+    impl<F: Feature, T> HasFeature<F, Here> for HCons<F, T> {}
+    impl<F: Feature, H, T: HasFeature<F, I>, I> HasFeature<F, There<I>> for HCons<H, T> {}
 
     /// A service with compile-time feature tracking
     pub struct Service<Features> {
@@ -216,22 +221,31 @@ mod features {
     }
 
     /// Only available if Logging feature is enabled
-    impl<F: HasFeature<Logging>> Service<F> {
-        pub fn log(&self, msg: &str) {
+    impl<F> Service<F> {
+        pub fn log<I>(&self, msg: &str)
+        where
+            F: HasFeature<Logging, I>,
+        {
             println!("📝 [{}] {}", self.name, msg);
         }
     }
 
     /// Only available if Metrics feature is enabled
-    impl<F: HasFeature<Metrics>> Service<F> {
-        pub fn record_metric(&self, name: &str, value: f64) {
+    impl<F> Service<F> {
+        pub fn record_metric<I>(&self, name: &str, value: f64)
+        where
+            F: HasFeature<Metrics, I>,
+        {
             println!("📊 [{}] {}={}", self.name, name, value);
         }
     }
 
     /// Only available if Caching feature is enabled
-    impl<F: HasFeature<Caching>> Service<F> {
-        pub fn cache_get(&self, key: &str) -> Option<String> {
+    impl<F> Service<F> {
+        pub fn cache_get<I>(&self, key: &str) -> Option<String>
+        where
+            F: HasFeature<Caching, I>,
+        {
             println!("🗄️  [{}] Cache get: {}", self.name, key);
             None
         }

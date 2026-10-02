@@ -9,8 +9,7 @@ target/
 *.dll
 
 # IDE
-.vscode/*
-!.vscode/settings.json
+.vscode/
 .idea/
 *.swp
 *.swo
@@ -32,8 +31,7 @@ build/
 .env
 .env.local
 
-# Fleet spec discipline (pgCK / sporaxis convention): SPEC* documents are
-# private working papers and may carry local paths — never tracked.
+# Private working documents (SPEC*) are never tracked.
 SPEC*
 # The docs layer embeds every .md verbatim (SPEC* included) into
 # .ontosys/data/docs.json, so the graph output stays untracked too.
