@@ -6,7 +6,10 @@
 //!
 //! API (all JSON, read-only):
 //!   /api/info                 build, sizes, baseline
-//!   /api/view                 nodes + links to draw (whole graph when small, overview otherwise)
+//!   /api/view                 what to draw first: the whole graph when small, else the
+//!                             grounded overview, else a map of classes and how they link
+//!   /api/classes              every class with its number of entities
+//!   /api/class?c=&q=&offset=  one page of a class's members, filtered by name
 //!   /api/node?iri=            one entity: properties, grouped links in/out, grounding, delta
 //!   /api/links?iri=&p=&dir=   one page of a node's links for a predicate
 //!   /api/search?q=            label search over both builds
@@ -31,8 +34,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
-/// Above this many triples the view shows the overview classes only.
-const MAX_FULL_VIEW: usize = 250_000;
+/// Above this many triples the first view is an overview, not the whole graph.
+pub const MAX_FULL_VIEW: usize = 250_000;
+/// Class-to-class links drawn on the class map.
+const CLASS_LINKS: usize = 80;
 
 const INDEX_HTML: &str = include_str!("viz/index.html");
 const LOGIC_JS: &str = include_str!("viz/logic.js");
@@ -42,13 +47,14 @@ struct AppState {
     loaded: Loaded,
     info: Value,
     view: Value,
+    classes: Value,
     aggregates: Value,
 }
 
 type Shared = Arc<AppState>;
 type Params = Query<HashMap<String, String>>;
 
-pub async fn run(repo_path: &Path, port: u16, open_browser: bool, compare: Option<PathBuf>) -> anyhow::Result<()> {
+pub async fn run(repo_path: &Path, port: u16, open_browser: bool, compare: Option<PathBuf>, overview_above: usize) -> anyhow::Result<()> {
     println!("\n{}", style("OntoSys Explorer").cyan().bold());
     println!("{}\n", style("═".repeat(50)).dim());
 
@@ -65,7 +71,7 @@ pub async fn run(repo_path: &Path, port: u16, open_browser: bool, compare: Optio
     }
     info("Loading into the SPARQL store...");
 
-    let state = tokio::task::spawn_blocking(move || build_state(&current, baseline.as_deref())).await??;
+    let state = tokio::task::spawn_blocking(move || build_state(&current, baseline.as_deref(), overview_above)).await??;
 
     success(&format!(
         "Loaded {} triples{} in {} ms; view: {} ({} nodes)",
@@ -75,6 +81,9 @@ pub async fn run(repo_path: &Path, port: u16, open_browser: bool, compare: Optio
         state.view["mode"].as_str().unwrap_or("?"),
         state.view["nodes"].as_array().map_or(0, |a| a.len()),
     ));
+    if state.loaded.skipped_lines > 0 {
+        warn(&format!("Skipped {} lines that are not valid N-Triples", state.loaded.skipped_lines));
+    }
 
     let app = router(Arc::new(state));
 
@@ -92,14 +101,24 @@ pub async fn run(repo_path: &Path, port: u16, open_browser: bool, compare: Optio
 }
 
 /// Load the store and precompute what every page load needs.
-fn build_state(current: &Path, baseline: Option<&Path>) -> anyhow::Result<AppState> {
+fn build_state(current: &Path, baseline: Option<&Path>, overview_above: usize) -> anyhow::Result<AppState> {
     let loaded = Loaded::load(current, baseline)?;
-    let overview: Vec<String> = if loaded.tbox.contains_key(&expand("pg:SystemCatalog")) {
+    let classes = json!({ "items": loaded.classes() });
+    // The grounded overview needs grounded entities: any C build declares the
+    // PostgreSQL classes in its vocabulary, but only a PostgreSQL tree has them.
+    let has = |c: &str| classes["items"].as_array().map_or(false, |a| a.iter().any(|x| x["short"] == c));
+    let overview: Vec<String> = if has("pg:SystemCatalog") {
         crate::grounding::postgres::OVERVIEW_CLASSES.iter().map(|c| format!("pg:{}", c)).collect()
     } else {
         Vec::new()
     };
-    let view = loaded.view(&overview, MAX_FULL_VIEW);
+    // Small graphs are drawn whole; large grounded ones as their grounded
+    // overview; anything else as a map of its classes.
+    let view = if loaded.triples_current > overview_above && overview.is_empty() {
+        json!({ "mode": "classes", "nodes": [], "edges": [], "classes": classes["items"], "class_links": loaded.class_links(CLASS_LINKS) })
+    } else {
+        loaded.view(&overview, overview_above)
+    };
     let aggregates = aggregates(&loaded);
     let meta: Value = current
         .parent()
@@ -113,11 +132,12 @@ fn build_state(current: &Path, baseline: Option<&Path>) -> anyhow::Result<AppSta
         "baseline": loaded.base().map(|b| b.version.clone()),
         "triples": loaded.triples_current,
         "baseline_triples": loaded.triples_baseline,
+        "skipped_lines": loaded.skipped_lines,
         "load_ms": loaded.load_ms,
         "view_mode": view["mode"],
         "build": meta,
     });
-    Ok(AppState { loaded, info, view, aggregates })
+    Ok(AppState { loaded, info, view, classes, aggregates })
 }
 
 fn router(state: Shared) -> Router {
@@ -129,6 +149,8 @@ fn router(state: Shared) -> Router {
         .route("/api/view", get(|State(s): State<Shared>| async move { Json(s.view.clone()) }))
         .route("/api/graph", get(|State(s): State<Shared>| async move { Json(s.view.clone()) }))
         .route("/api/aggregates", get(|State(s): State<Shared>| async move { Json(s.aggregates.clone()) }))
+        .route("/api/classes", get(|State(s): State<Shared>| async move { Json(s.classes.clone()) }))
+        .route("/api/class", get(class_members))
         .route("/api/delta", get(|State(s): State<Shared>| async move { Json(s.loaded.delta_summary().unwrap_or(json!(null))) }))
         .route("/api/delta/list", get(delta_list))
         .route("/api/node", get(node))
@@ -169,6 +191,13 @@ async fn links(State(s): State<Shared>, Query(p): Params) -> Response {
     let incoming = p.get("dir").map_or(false, |d| d == "in");
     let (offset, limit) = (num(&p, "offset", 0, usize::MAX), num(&p, "limit", 50, 500));
     blocking(s, move |l| l.links(&iri, &pred, incoming, offset, limit)).await
+}
+
+async fn class_members(State(s): State<Shared>, Query(p): Params) -> Response {
+    let Some(c) = p.get("c").cloned() else { return bad("c required") };
+    let q = p.get("q").cloned().unwrap_or_default();
+    let (offset, limit) = (num(&p, "offset", 0, usize::MAX), num(&p, "limit", 50, 500));
+    blocking(s, move |l| Ok(l.class_members(&c, &q, offset, limit))).await
 }
 
 async fn search(State(s): State<Shared>, Query(p): Params) -> Response {
@@ -233,8 +262,12 @@ PREFIX pgcat: <https://ontosys.io/ns/pgcat#>
 
 /// (id, title, what it measures, SPARQL body)
 const AGGREGATES: &[(&str, &str, &str, &str)] = &[
-    ("classes", "Entities by class", "Every typed entity in the current build, by its ontology class.",
-     "SELECT ?class (COUNT(?s) AS ?count) WHERE { ?s a ?class FILTER(STRSTARTS(STR(?class), \"https://ontosys.io/ns/\")) } GROUP BY ?class ORDER BY DESC(?count)"),
+    ("classes", "Entities by class", "Every typed entity in the current build, by its class.",
+     "SELECT ?class (COUNT(?s) AS ?count) WHERE { ?s a ?class FILTER(!STRSTARTS(STR(?class), \"http://www.w3.org/2002/07/owl#\")) } GROUP BY ?class ORDER BY DESC(?count)"),
+    ("predicates", "Triples by predicate", "How often each relation or property is stated.",
+     "SELECT ?predicate (COUNT(*) AS ?triples) WHERE { ?s ?predicate ?o } GROUP BY ?predicate ORDER BY DESC(?triples) LIMIT 40"),
+    ("linked", "Most linked entities", "Entities by number of links pointing at them (types excluded).",
+     "SELECT ?entity (COUNT(?s) AS ?links) WHERE { ?s ?p ?entity FILTER(isIRI(?entity) && ?p != rdf:type) } GROUP BY ?entity ORDER BY DESC(?links) LIMIT 30"),
     ("areas", "C functions per code area", "Functions defined in files of each directory.",
      "SELECT ?area (COUNT(?f) AS ?functions) WHERE { ?f a cx:Function ; cx:definedIn ?file . ?file pg:inArea ?area } GROUP BY ?area ORDER BY DESC(?functions) LIMIT 30"),
     ("raised", "Most raised error conditions", "SQLSTATEs by number of functions whose body references the ERRCODE_ macro.",
@@ -295,7 +328,7 @@ mod tests {
     fn app() -> Router {
         static APP: OnceLock<Router> = OnceLock::new();
         APP.get_or_init(|| {
-            let st = build_state(&fixture("current.nt"), Some(&fixture("baseline.nt"))).expect("fixture loads");
+            let st = build_state(&fixture("current.nt"), Some(&fixture("baseline.nt")), MAX_FULL_VIEW).expect("fixture loads");
             router(Arc::new(st))
         })
         .clone()
@@ -459,6 +492,94 @@ mod tests {
         let (s, v) = get("/api/node?iri=not%20an%20iri").await;
         assert_eq!(s, StatusCode::BAD_REQUEST);
         assert!(v["error"].is_string());
+    }
+
+    // ------------------------------------------------------------------------
+    // Generic graphs: no PostgreSQL grounding, classes outside ontosys's
+    // namespaces, and a few invalid lines (tests/fixtures/gen_generic.py).
+    // ------------------------------------------------------------------------
+    const CO: &str = "http://codeontology.org/ontology/";
+    const DEMO: &str = "http://example.org/data/project/demo/";
+
+    fn generic_app() -> Router {
+        static APP: OnceLock<Router> = OnceLock::new();
+        APP.get_or_init(|| {
+            let st = build_state(&fixture("generic.nt"), None, 0).expect("generic fixture loads despite invalid lines");
+            router(Arc::new(st))
+        })
+        .clone()
+    }
+
+    async fn generic_get(uri: &str) -> (StatusCode, Value) {
+        let res = generic_app().oneshot(Request::get(uri).body(Body::empty()).unwrap()).await.unwrap();
+        let status = res.status();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
+    #[tokio::test]
+    async fn invalid_lines_are_skipped_and_counted() {
+        let (_, v) = generic_get("/api/info").await;
+        assert_eq!(v["skipped_lines"], 2);
+        assert_eq!(v["triples"], 320);
+        let (_, v) = get("/api/info").await;
+        assert_eq!(v["skipped_lines"], 0, "a clean graph skips nothing");
+    }
+
+    #[tokio::test]
+    async fn ungrounded_large_graph_opens_on_a_class_map() {
+        let (_, v) = generic_get("/api/view").await;
+        assert_eq!(v["mode"], "classes", "declared but uninstantiated PostgreSQL classes are not an overview");
+        let class = |c: &str| v["classes"].as_array().unwrap().iter().find(|x| x["iri"] == c).cloned();
+        let f = class(&format!("{}Function", CO)).expect("Function class");
+        assert_eq!(f["count"], 30);
+        assert_eq!(f["label"], "Function", "unlabelled classes are named by their local name");
+        assert_eq!(class(&format!("{}Parameter", CO)).unwrap()["count"], 60);
+        assert!(!v["classes"].to_string().contains("owl#"), "vocabulary is not drawn");
+        let link = v["class_links"].as_array().unwrap().iter()
+            .find(|l| l["target"] == format!("{}Function", CO) && l["p"].as_str().unwrap().ends_with("hasMethod"))
+            .expect("Project → Function link");
+        assert_eq!(link["source"], "http://usefulinc.com/ns/doap#Project");
+        assert_eq!(link["count"], 30);
+    }
+
+    #[tokio::test]
+    async fn class_members_page_without_overlap_and_filter_by_name() {
+        let c = enc(&format!("{}Function", CO));
+        let mut seen = BTreeSet::new();
+        for (off, expect) in [(0, 24), (24, 6)] {
+            let (s, v) = generic_get(&format!("/api/class?c={}&offset={}&limit=24", c, off)).await;
+            assert_eq!(s, StatusCode::OK);
+            assert_eq!(v["total"], 30);
+            let items = v["items"].as_array().unwrap();
+            assert_eq!(items.len(), expect);
+            for i in items {
+                assert!(seen.insert(i["iri"].as_str().unwrap().to_string()), "page overlap at offset {}", off);
+            }
+        }
+        let (_, v) = generic_get(&format!("/api/class?c={}&q=handler_1", c)).await;
+        assert_eq!(v["total"], 10);
+        assert_eq!(v["items"][0]["label"], "handler_10", "sorted by name");
+    }
+
+    #[tokio::test]
+    async fn entity_kind_falls_back_to_its_own_class() {
+        let (_, v) = generic_get(&format!("/api/node?iri={}&n=5", enc(&format!("{}fn/handler_00", DEMO)))).await;
+        assert_eq!(v["kind"], format!("{}Function", CO));
+        let params = v["outgoing"].as_array().unwrap().iter().find(|g| g["p"].as_str().unwrap().ends_with("hasParameter")).unwrap();
+        assert_eq!(params["items"][0]["kind"], format!("{}Parameter", CO));
+    }
+
+    #[tokio::test]
+    async fn classes_and_stats_cover_every_namespace() {
+        let (_, v) = generic_get("/api/classes").await;
+        assert!(v["items"].as_array().unwrap().iter().any(|c| c["iri"] == format!("{}Function", CO) && c["count"] == 30));
+        let (_, v) = get("/api/classes").await;
+        assert!(v["items"].as_array().unwrap().iter().any(|c| c["iri"] == "https://ontosys.io/ns/c#Function" && c["count"] == 20));
+        let (_, v) = generic_get("/api/aggregates").await;
+        let classes = v["items"].as_array().unwrap().iter().find(|a| a["id"] == "classes").expect("classes aggregate");
+        assert!(classes["rows"].to_string().contains("codeontology.org/ontology/Function"));
+        assert!(v["items"].as_array().unwrap().iter().any(|a| a["id"] == "predicates"), "predicate counts");
     }
 
     #[tokio::test]

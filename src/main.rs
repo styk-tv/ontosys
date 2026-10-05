@@ -93,6 +93,11 @@ enum Commands {
         /// as the baseline, to explore the delta
         #[arg(short, long)]
         compare: Option<PathBuf>,
+
+        /// Above this many triples, open on an overview (grounded structure, or
+        /// a map of classes) instead of drawing the whole graph
+        #[arg(long, default_value_t = cli::serve::MAX_FULL_VIEW)]
+        overview_above: usize,
     },
 
     /// Run a SPARQL query against the built graph
@@ -175,8 +180,8 @@ async fn main() -> anyhow::Result<()> {
         Commands::Stats => {
             cli::stats::run(&repo_path).await
         }
-        Commands::Serve { port, open, compare } => {
-            cli::serve::run(&repo_path, port, open, compare).await
+        Commands::Serve { port, open, compare, overview_above } => {
+            cli::serve::run(&repo_path, port, open, compare, overview_above).await
         }
         Commands::Query { query, format } => {
             cli::query::run(&repo_path, &query, &format).await

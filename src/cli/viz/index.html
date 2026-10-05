@@ -132,8 +132,15 @@ svg#graph { width: 100%; height: 100%; display: block; }
 .lk text.plbl { display: none; font-size: 8px; fill: var(--muted); pointer-events: none;
   paint-order: stroke; stroke: var(--canvas); stroke-width: 3px; }
 .plabels-all .lk text.plbl, .plabels-sel .lk.hl text.plbl { display: block; }
-.node.group circle.v { fill: var(--panel) !important; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 3 2; }
+.node.group:not(.cls) circle.v { fill: var(--panel) !important; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 3 2; }
 .node.group text { display: block !important; font-weight: 600; }
+.node.cls circle.v { stroke: var(--stroke); stroke-width: 2; }
+.lk.cl line.vis { stroke-width: 1.6; }
+.lk.cl text.plbl { display: block; font-size: 9px; }
+.cls-row { display: flex; align-items: center; gap: 8px; padding: 4px 4px; border-radius: 4px; cursor: pointer; }
+.cls-row:hover { background: var(--panel-2); }
+.cls-row .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+#browse-filter { width: 100%; padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); margin: 6px 0; }
 .famsw { display: inline-block; width: 14px; height: 3px; border-radius: 2px; flex: none; }
 .node circle.v { stroke: var(--stroke); stroke-width: 1; pointer-events: none; }
 .node circle.hit { fill: transparent; stroke: none; cursor: pointer; }
@@ -174,18 +181,20 @@ svg#graph { width: 100%; height: 100%; display: block; }
   </div>
   <div id="tabs">
     <button data-tab="explore" class="on">Explore</button>
+    <button data-tab="browse">Browse</button>
     <button data-tab="stats">Stats</button>
     <button data-tab="delta" id="tab-delta-btn">Delta</button>
     <button data-tab="sparql">SPARQL</button>
   </div>
   <section class="tab on" id="tab-explore">
     <div id="searchwrap">
-      <input id="search" placeholder="Search everything (functions, catalogs, settings, SQLSTATEs…)" autocomplete="off">
+      <input id="search" placeholder="Search by name…" autocomplete="off">
       <div id="results"></div>
     </div>
     <div id="nav"><button id="back" title="Back">◀</button><button id="fwd" title="Forward">▶</button><div id="crumbs"></div></div>
     <div id="detail"><div class="empty">Click a node on the canvas, or search. Every link in this panel is a step you can take: it brings the target onto the canvas and focuses it.</div></div>
   </section>
+  <section class="tab" id="tab-browse"><div class="empty">Loading…</div></section>
   <section class="tab" id="tab-stats"><div class="empty">Loading…</div></section>
   <section class="tab" id="tab-delta"><div class="empty">Start the explorer with <code>--compare &lt;other build&gt;</code> to see a delta.</div></section>
   <section class="tab" id="tab-sparql">
@@ -233,12 +242,13 @@ const KIND = {
   'cx:Function': '#6a5acd', 'cx:Struct': '#4677c9', 'cx:Field': '#6b93d6', 'cx:SourceFile': '#8d7f62',
   'cx:HeaderFile': '#a08a5c', 'cx:ExternalSymbol': '#9a9a9a', 'cx:Macro': '#a3779a', 'cx:Prototype': '#5a8f7d',
 };
-const kindColor = k => KIND[k] || (String(k).startsWith('pg:') ? '#7d63b8' : String(k).startsWith('cx:') ? '#3f8f8f' : '#8b949e');
-const short = k => String(k || '').replace(/^(pg|cx|pgcat|rdfs?|owl):/, '');
+const kindColor = k => KIND[k] || (String(k).startsWith('pg:') ? '#7d63b8' : String(k).startsWith('cx:') ? '#3f8f8f' : k === 'other' ? '#8b949e' : L.hashColor(k));
+const short = k => L.shortName(k);
+const nameOf = t => L.displayName(t.label, t.iri);
 const statusDot = s => s && s !== 'unchanged' ? `<span class="status ${s}">${s}</span>` : '';
 
 // ---------------------------------------------------------------- state
-const S = { info: {}, nodes: new Map(), links: [], linkKeys: new Set(), sel: null, hist: [], hpos: -1,
+const S = { info: {}, classes: [], nodes: new Map(), links: [], linkKeys: new Set(), sel: null, hist: [], hpos: -1,
             req: 0, mode: 'all', focus: new Set(), sig: '', pnames: new Map(),
             hidden: new Set(), base: new Set(), delta: false, deltaOnly: false };
 
@@ -304,15 +314,18 @@ const sim = d3.forceSimulation()
   .on('end', () => { if (S.mode === 'all') freezeAll(); else fit(60, 500); });
 function layoutFor(mode) {
   const roomy = mode !== 'all';
-  sim.force('link').distance(roomy ? 110 : 34).strength(roomy ? .7 : .5);
-  sim.force('charge').strength(roomy ? -320 : -45).distanceMax(roomy ? 900 : 380);
-  sim.force('collide').radius(roomy ? 28 : 7);
+  // class nodes are large and carry long labels: they need room in proportion
+  sim.force('link').distance(l => l.count ? 150 : roomy ? 110 : 34).strength(l => l.count ? .25 : roomy ? .7 : .5);
+  sim.force('charge').strength(d => d.isClass ? -900 : roomy ? -320 : -45).distanceMax(roomy ? 900 : 600);
+  sim.force('collide').radius(d => d.isClass ? radius(d) + 26 : roomy ? 28 : 7);
   sim.alphaDecay(roomy ? .05 : .0228);
 }
 function freezeAll() { for (const n of S.nodes.values()) if (n.x != null) { n.fx = n.x; n.fy = n.y; } }
 function thawAll() { for (const n of S.nodes.values()) { n.fx = null; n.fy = null; } }
 function resize() { const r = $('#main').getBoundingClientRect(); width = r.width; height = r.height; }
 window.addEventListener('resize', resize); resize();
+// the layout grows around (0,0): start with it in the middle of the canvas, not its corner
+svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2));
 
 let linkSel = gLinks.selectAll('g.lk'), nodeSel = gNodes.selectAll('g');
 function visibleNodes() {
@@ -345,8 +358,8 @@ function draw(reheat = false) {
      .on('mouseout', () => $('#tip').style.display = 'none');
     return g;
   });
-  linkSel.attr('class', l => `lk fam-${l.fam}${l.status ? ' ' + l.status : ''}${isHl(l) ? ' hl' : ''}`);
-  linkSel.select('text').text(l => pname(l.p));
+  linkSel.attr('class', l => `lk fam-${l.fam}${l.status ? ' ' + l.status : ''}${l.count ? ' cl' : ''}${isHl(l) ? ' hl' : ''}`);
+  linkSel.select('text').text(l => pname(l.p) + (l.count ? ' · ' + fmt(l.count) : ''));
   nodeSel = gNodes.selectAll('g.node').data(nodes, d => d.iri).join(enter => {
     const g = enter.append('g').attr('class', 'node').attr('data-iri', d => d.iri)
       .call(d3.drag().on('start', dragStart).on('drag', dragged).on('end', dragEnd))
@@ -357,9 +370,10 @@ function draw(reheat = false) {
     g.append('text').attr('x', 8).attr('y', 3);
     return g;
   });
-  nodeSel.attr('class', d => `node st-${d.status || 'unchanged'}${d.status === 'removed' ? ' removed' : ''}${S.sel === d.iri ? ' sel' : ''}${d.pin ? ' pin' : ''}${d.isGroup ? ' group' : ''}`);
-  nodeSel.select('circle.v').attr('r', d => d.isGroup ? 10 : d.iri === S.sel ? 8 : (d.explored ? 6 : 4.5)).attr('fill', d => kindColor(d.kind));
-  nodeSel.select('text').text(d => d.label || d.short).attr('x', d => d.isGroup ? 13 : 8);
+  nodeSel.attr('class', d => `node st-${d.status || 'unchanged'}${d.status === 'removed' ? ' removed' : ''}${S.sel === d.iri ? ' sel' : ''}${d.pin ? ' pin' : ''}${d.isGroup ? ' group' : ''}${d.isClass ? ' cls' : ''}`);
+  nodeSel.select('circle.v').attr('r', radius).attr('fill', d => kindColor(d.kind));
+  nodeSel.select('circle.hit').attr('r', d => Math.max(11, radius(d) + 2));
+  nodeSel.select('text').text(d => d.isGroup ? d.label : nameOf(d)).attr('x', d => radius(d) + 3);
   const sig = nodes.length + '|' + links.length + '|' + S.mode;
   const changed = sig !== S.sig; S.sig = sig;
   sim.nodes(nodes); sim.force('link').links(links);
@@ -368,6 +382,8 @@ function draw(reheat = false) {
   legend();
 }
 const id = x => typeof x === 'object' ? x.iri : x;
+// class nodes grow with their number of entities
+const radius = d => d.isClass ? 8 + 3 * Math.log10(Math.max(1, d.total)) : d.isGroup ? 10 : d.iri === S.sel ? 8 : (d.explored ? 6 : 4.5);
 function ticked() {
   linkSel.selectAll('line').attr('x1', l => l.source.x).attr('y1', l => l.source.y).attr('x2', l => l.target.x).attr('y2', l => l.target.y);
   linkSel.select('text').attr('x', l => (l.source.x + l.target.x) / 2).attr('y', l => (l.source.y + l.target.y) / 2 - 2);
@@ -379,8 +395,8 @@ function dragEnd(e, d) { if (!e.active) sim.alphaTarget(0); if (S.mode !== 'all'
 function tipText(e, html) { const t = $('#tip'); const r = $('#main').getBoundingClientRect();
   t.innerHTML = html; t.style.display = 'block'; t.style.left = (e.clientX - r.left + 12) + 'px'; t.style.top = (e.clientY - r.top + 12) + 'px'; }
 function tip(e, d) {
-  if (d.isGroup) return tipText(e, `<b>${esc(d.label)}</b><div class="small muted">${d.members.size < d.total ? `click to draw the next ${Math.min(L.GROUP_PAGE, d.total - d.members.size)}` : 'all drawn'}</div>`);
-  tipText(e, `<b>${esc(d.label || d.short)}</b> <span class="muted">${esc(short(d.kind))}</span> ${statusDot(d.status)}`);
+  if (d.isGroup) return tipText(e, `<b>${esc(d.label)}</b>${d.isClass ? `<div class="small muted">${esc(d.cls)}</div>` : ''}<div class="small muted">${d.members.size < d.total ? `click to draw the next ${Math.min(L.GROUP_PAGE, d.total - d.members.size)}` : 'all drawn'}</div>`);
+  tipText(e, `<b>${esc(nameOf(d))}</b> <span class="muted">${esc(short(d.kind))}</span> ${statusDot(d.status)}`);
 }
 function fit(pad = 40, dur = 600, maxK = 2.2) {
   const ns = visibleNodes().filter(n => n.x != null);
@@ -408,7 +424,8 @@ svg.on('click', () => { $('#results').style.display = 'none'; });
 function legend() {
   const counts = new Map();
   const shown = S.mode === 'all' ? [...S.nodes.values()] : visibleNodes();
-  for (const n of shown) counts.set(n.kind, (counts.get(n.kind) || 0) + 1);
+  // class nodes name themselves; the legend counts the entities drawn
+  for (const n of shown) if (!n.isClass) counts.set(n.kind, (counts.get(n.kind) || 0) + 1);
   for (const k of S.hidden) if (!counts.has(k)) counts.set(k, 0);
   const fams = new Set(S.links.filter(l => { const a = S.nodes.get(id(l.source)), b = S.nodes.get(id(l.target)); return a && b; }).map(l => l.fam));
   $('#legend').innerHTML = `<div class="row">${[...counts.entries()].filter(([k]) => k !== 'group').sort((a, b) => b[1] - a[1]).map(([k, c]) =>
@@ -438,11 +455,11 @@ function addNode(b, near, around) {
   }
   return n;
 }
-function addLink(s, p, t, status) {
+function addLink(s, p, t, status, count) {
   p = L.pk(p);
   const k = L.linkKey(s, p, t);
   if (S.linkKeys.has(k)) return;
-  S.linkKeys.add(k); S.links.push({ source: s, target: t, p, status, fam: L.family(p) });
+  S.linkKeys.add(k); S.links.push({ source: s, target: t, p, status, count, fam: L.family(p) });
 }
 
 // ---------------------------------------------------------------- navigation
@@ -456,7 +473,7 @@ $('#fwd').onclick = () => { if (S.hpos < S.hist.length - 1) { S.hpos++; select(S
 function crumbs() {
   $('#back').disabled = S.hpos <= 0; $('#fwd').disabled = S.hpos >= S.hist.length - 1;
   $('#crumbs').innerHTML = S.hist.slice(Math.max(0, S.hpos - 4), S.hpos + 1).map((iri, i, a) => {
-    const n = S.nodes.get(iri); const label = n ? (n.label || n.short) : iri.split('/').pop();
+    const n = S.nodes.get(iri); const label = n ? nameOf(n) : L.localName(iri);
     return `<span data-i="${esc(iri)}" title="${esc(label)}">${esc(label)}</span>${i < a.length - 1 ? '<span class="muted">›</span>' : ''}`;
   }).join('');
   $('#crumbs').querySelectorAll('span[data-i]').forEach(s => s.onclick = () => go(s.dataset.i));
@@ -487,11 +504,12 @@ function addGroup(d, g, dir, items) {
   if (d.iri === S.sel) { S.focus.add(hid); h.members.forEach(m => S.focus.add(m)); }
 }
 function hubLabel(h) {
-  const arrow = h.dir === 'in' ? '←' : '→';
-  h.label = `${arrow} ${h.name} · ${h.members.size ? fmt(h.members.size) + ' of ' : ''}${fmt(h.total)}`;
+  const arrow = h.isClass ? '' : (h.dir === 'in' ? '← ' : '→ ');
+  h.label = `${arrow}${h.name} · ${h.members.size ? fmt(h.members.size) + ' of ' : ''}${fmt(h.total)}`;
 }
 async function expandHub(h) {
   if (h.members.size >= h.total) return;
+  if (h.isClass) return expandClass(h);
   const r = await api('/api/links', { iri: h.owner, p: h.p, dir: h.dir, offset: h.members.size, limit: L.GROUP_PAGE });
   for (const t of r.items) {
     addNode(t, h.iri);
@@ -499,6 +517,23 @@ async function expandHub(h) {
     h.members.add(t.iri);
     if (h.owner === S.sel) S.focus.add(t.iri);
   }
+  hubLabel(h); draw(true);
+}
+// A class node draws its next page of members, each linked to it by rdf:type.
+// Each page goes on its own ring around the class, so nothing lands on top of
+// the class node or of another member.
+async function expandClass(h) {
+  const r = await api('/api/class', { c: h.cls, offset: h.members.size, limit: L.GROUP_PAGE });
+  const ring = radius(h) + 36 + 22 * Math.floor(h.members.size / L.GROUP_PAGE);
+  r.items.forEach((t, i) => {
+    const fresh = !S.nodes.has(t.iri);
+    const n = addNode(t, h.iri);
+    if (fresh && h.x != null) {
+      const a = 2 * Math.PI * i / r.items.length;
+      n.x = h.x + ring * Math.cos(a); n.y = h.y + ring * Math.sin(a);
+    }
+    addLink(t.iri, 'rdf:type', h.iri, null); h.members.add(t.iri);
+  });
   hubLabel(h); draw(true);
 }
 // The neighbourhood of `d`: small groups' members, large groups as group nodes.
@@ -545,9 +580,9 @@ async function select(iri, from) {
 }
 
 function itemRow(t, from) {
-  return `<div class="item" data-iri="${esc(t.iri)}" data-from='${esc(JSON.stringify(from))}'>
+  return `<div class="item" data-iri="${esc(t.iri)}" data-kind="${esc(t.kind)}" data-from='${esc(JSON.stringify(from))}'>
     <i class="dot" style="background:${kindColor(t.kind)};${t.status && t.status !== 'unchanged' ? 'border-color:var(--' + t.status + ')' : ''}"></i>
-    <span class="lbl">${esc(t.label || t.short)}</span><span class="k">${esc(short(t.kind))}</span></div>`;
+    <span class="lbl">${esc(nameOf(t))}</span><span class="k">${esc(short(t.kind))}</span></div>`;
 }
 function groupHtml(g, dir, d) {
   const arrow = dir === 'in' ? '←' : '→';
@@ -571,7 +606,7 @@ function renderDetail(d) {
   const props = d.properties.length ? `<h3>Properties</h3><div class="kv">${d.properties.map(p =>
     `<div class="k" title="${esc(p.short)}">${esc(p.label || short(p.short))}</div><div class="v ${p.value.length > 160 ? 'clip' : ''}">${esc(p.value)}</div>`).join('')}</div>` : '';
   $('#detail').innerHTML = `<div class="card">
-      <h2>${esc(d.label || d.short)}</h2>
+      <h2>${esc(nameOf(d))}</h2>
       <div class="badges"><span class="badge kind" style="background:${kindColor(d.kind)}">${esc(short(d.kind))}</span>
         ${roles.map(r => `<span class="badge">${esc(short(r))}</span>`).join('')} ${statusDot(d.status)}
         ${d.side === 'baseline' ? `<span class="badge">only in ${esc(S.info.baseline || 'baseline')}</span>` : ''}</div>
@@ -610,7 +645,7 @@ function bindItems(el) {
   el.querySelectorAll('.item').forEach(it => it.onclick = () => go(it.dataset.iri, JSON.parse(it.dataset.from)));
 }
 function itemBrief(it) {
-  return { iri: it.dataset.iri, label: it.querySelector('.lbl').textContent, kind: guessKind(it.dataset.iri, it.querySelector('.k').textContent) };
+  return { iri: it.dataset.iri, label: it.querySelector('.lbl').textContent, kind: it.dataset.kind || guessKind(it.dataset.iri, it.querySelector('.k').textContent) };
 }
 function guessKind(iri, shortKind) {
   for (const k of Object.keys(KIND)) if (short(k) === shortKind) return k;
@@ -634,7 +669,7 @@ async function doSearch() {
   if (!q) { $('#results').style.display = 'none'; return; }
   const r = await api('/api/search', { q, limit: 40 });
   $('#results').innerHTML = (r.items.length ? r.items.map(t => `<div class="row" data-iri="${esc(t.iri)}">
-      <i class="dot" style="background:${kindColor(t.kind)}"></i><span>${esc(t.label || t.short)}</span>
+      <i class="dot" style="background:${kindColor(t.kind)}"></i><span>${esc(nameOf(t))}</span>
       <span class="muted small" style="margin-left:auto">${esc(short(t.kind))}</span>${statusDot(t.status)}</div>`).join('')
       : '<div class="row muted">no matches</div>') + (r.total > r.items.length ? `<div class="row muted small">${fmt(r.total)} matches — refine</div>` : '');
   $('#results').style.display = 'block';
@@ -644,7 +679,7 @@ async function doSearch() {
 // ---------------------------------------------------------------- stats
 function cellHtml(c) {
   if (!c) return '';
-  if (c.type === 'iri') return `<span class="go" data-iri="${esc(c.value)}" title="${esc(c.value)}">${esc(c.label || c.short)}</span>`;
+  if (c.type === 'iri') return `<span class="go" data-iri="${esc(c.value)}" title="${esc(c.value)}">${esc(c.label || (/^(pg|cx|pgcat|rdfs?|owl):/.test(c.short) ? c.short : L.localName(c.value)))}</span>`;
   return esc(c.value);
 }
 function tableHtml(vars, rows) {
@@ -658,9 +693,11 @@ async function loadStats() {
   const classes = r.items.find(a => a.id === 'classes');
   const count = c => { const row = classes && classes.rows.find(x => x.class.short === c); return row ? +row.count.value : 0; };
   $('#numbers').innerHTML = [
-    [S.info.triples, 'triples'], [count('cx:Function'), 'C functions'], [count('pg:BuiltinFunction'), 'SQL functions'],
+    [S.info.triples, 'triples'], [S.classes.length, 'classes'], [count('cx:Function'), 'C functions'], [count('pg:BuiltinFunction'), 'SQL functions'],
     [count('pg:SystemCatalog'), 'catalogs'], [count('pg:ConfigParameter'), 'settings'], [count('pg:NodeType'), 'node types'],
   ].filter(x => x[0]).map(([n, l]) => `<div><b>${fmt(n)}</b><span>${l}</span></div>`).join('');
+  // the PostgreSQL starter query only where there are SQLSTATEs to ask about
+  if (!count('pg:SQLState') && classes) $('#query').value = classes.query;
   $('#tab-stats').innerHTML = `<div class="muted small">Computed with SPARQL over the full graph (${fmt(S.info.triples)} triples) at startup. Click any entity to travel to it.</div>` +
     r.items.map(a => a.error ? `<div class="agg"><h4>${esc(a.title)}</h4><div class="muted">${esc(a.error)}</div></div>` :
       `<div class="agg"><h3>${esc(a.title)}</h3><div class="muted small">${esc(a.about)} <span class="go-q" data-q="${esc(a.query)}" style="cursor:pointer;color:var(--accent)">query ↗</span> · ${a.elapsed_ms} ms</div>${tableHtml(a.vars, a.rows)}</div>`).join('');
@@ -706,6 +743,36 @@ async function deltaList(cls, status, title, offset) {
   $('#dlist').scrollIntoView({ behavior: 'smooth' });
 }
 
+// ---------------------------------------------------------------- browse
+// Every class with its count; a class lists its members by name, a page at a time.
+const BROWSE_PAGE = 50;
+function browseClasses() {
+  $('#tab-browse').innerHTML = `<div class="muted small">${fmt(S.classes.length)} classes in this graph. Pick one to list its entities.</div>` +
+    S.classes.map(c => `<div class="cls-row" data-c="${esc(c.iri)}"><i class="dot" style="background:${kindColor(c.short)}"></i>
+      <span>${esc(c.label)}</span><span class="n">${fmt(c.count)}</span></div>`).join('');
+  $('#tab-browse').querySelectorAll('.cls-row').forEach(r => r.onclick = () => browseClass(S.classes.find(c => c.iri === r.dataset.c), '', 0));
+}
+let bTimer = null;
+async function browseClass(c, q, offset) {
+  const r = await api('/api/class', { c: c.iri, q, offset, limit: BROWSE_PAGE });
+  if (!$('#browse-filter')) {
+    $('#tab-browse').innerHTML = `<div class="actions"><button id="browse-back">◀ classes</button></div>
+      <h3><i class="dot" style="display:inline-block;background:${kindColor(c.short)}"></i> ${esc(c.label)}</h3>
+      <div class="iri">${esc(c.iri)}</div>
+      <input id="browse-filter" placeholder="Filter by name…" autocomplete="off"><div id="browse-list"></div>`;
+    $('#browse-back').onclick = browseClasses;
+    $('#browse-filter').addEventListener('input', e => { clearTimeout(bTimer); bTimer = setTimeout(() => browseClass(c, e.target.value, 0), 180); });
+  }
+  $('#browse-list').innerHTML = `<div class="muted small">${fmt(r.total)} ${r.total === 1 ? 'entity' : 'entities'}${q ? ` matching “${esc(q)}”` : ''}</div>` +
+    r.items.map(t => itemRow(t, null)).join('') +
+    `<div class="actions">${offset > 0 ? '<button id="bprev">◀ prev</button>' : ''}${offset + r.items.length < r.total ? '<button id="bnext">next ▶</button>' : ''}
+      ${r.total ? `<span class="muted small">${fmt(offset + 1)}–${fmt(offset + r.items.length)} of ${fmt(r.total)}</span><button id="bdraw">Draw these</button>` : ''}</div>`;
+  $('#browse-list').querySelectorAll('.item').forEach(it => it.onclick = () => go(it.dataset.iri));
+  if ($('#bprev')) $('#bprev').onclick = () => browseClass(c, q, Math.max(0, offset - BROWSE_PAGE));
+  if ($('#bnext')) $('#bnext').onclick = () => browseClass(c, q, offset + BROWSE_PAGE);
+  if ($('#bdraw')) $('#bdraw').onclick = () => { r.items.forEach(t => addNode(t)); draw(); setTimeout(fit, 900); };
+}
+
 // ---------------------------------------------------------------- sparql
 $('#query').value = `PREFIX pg: <https://ontosys.io/ns/pg#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -730,12 +797,26 @@ async function boot() {
   setMode(store.get('ontosys-view') || 'all', false);
   S.info = await api('/api/info');
   $('#subtitle').textContent = `${S.info.project || ''} ${S.info.version || ''}${S.info.baseline ? ' · compared with ' + S.info.baseline : ''}`;
-  const v = await api('/api/view');
+  const [v, cl] = await Promise.all([api('/api/view'), api('/api/classes')]);
+  S.classes = cl.items;
   for (const n of v.nodes) { S.nodes.set(n.iri, { ...n }); S.base.add(n.iri); }
   for (const e of v.edges) addLink(e.source, e.p, e.target, e.status);
-  $('#mode').innerHTML = v.mode === 'overview'
+  for (const c of v.classes || []) {
+    const cid = L.classId(c.iri);
+    const h = { iri: cid, isGroup: true, isClass: true, cls: c.iri, kind: c.short, name: c.label, total: c.count, members: new Set() };
+    hubLabel(h); S.nodes.set(cid, h); S.base.add(cid);
+  }
+  for (const l of v.class_links || []) {
+    addLink(L.classId(l.source), l.p, L.classId(l.target), null, l.count);
+    S.pnames.set(L.pk(l.p), l.label);
+  }
+  const skipped = S.info.skipped_lines ? ` ${fmt(S.info.skipped_lines)} invalid lines skipped.` : '';
+  $('#mode').innerHTML = (v.mode === 'overview'
     ? `Overview: grounded structure (${fmt(v.nodes.length)} of ${fmt(S.info.triples)} triples' entities). Search or travel links to bring in anything else.`
-    : `Full graph (${fmt(v.nodes.length)} entities).`;
+    : v.mode === 'classes'
+    ? `Overview: ${fmt(S.classes.length)} classes and how they link. Click a class to draw its entities, or use Browse.`
+    : `Full graph (${fmt(v.nodes.length)} entities).`) + skipped;
+  browseClasses();
   $('#loading').style.display = 'none';
   draw();
   setTimeout(() => fit(40, 800), 2500);

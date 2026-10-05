@@ -291,10 +291,15 @@ its delta — the same computation `ontosys diff` reports.
   shareable URL.
 - **Canvas**: the whole graph when small; otherwise an overview of the
   grounded structure (for PostgreSQL: code areas, catalogs and columns, node
-  types, SQLSTATEs) that grows as you explore. Delta colouring and a
+  types, SQLSTATEs) that grows as you explore. A graph with no grounding opens
+  on a **class map** instead: one node per class, sized by its number of
+  entities, linked by the relations between classes with their counts;
+  clicking a class draws its entities a page at a time. Delta colouring and a
   "changed only" view.
+- **Browse**: every class with its count; a class lists its entities by name,
+  filterable, a page at a time — the way through any graph, grounded or not.
 - **Stats**: SPARQL aggregates over the full graph, computed at startup —
-  entities by class, functions per code area, most raised error conditions,
+  entities by class, triples by predicate, most linked entities, functions per code area, most raised error conditions,
   most read settings, most created node types, most called and most complex
   functions, … — every row clickable.
 - **Delta**: added / removed / changed per kind, browsable lists.
@@ -318,7 +323,12 @@ Rust, in memory, built without RocksDB, so no C++ toolchain is involved. A
 pgRDF-backed store (querying a pgRDF database through the same API) is the
 planned second backend.
 
-HTTP API (JSON): `/api/info`, `/api/view`, `/api/node?iri=`,
+`--overview-above <triples>` (default 250,000) sets when the overview replaces
+the whole graph. Lines that are not valid N-Triples are skipped and counted
+(shown on the canvas and at startup) rather than refusing the file.
+
+HTTP API (JSON): `/api/info`, `/api/view`, `/api/classes`,
+`/api/class?c=&q=&offset=`, `/api/node?iri=`,
 `/api/links?iri=&p=&dir=`, `/api/search?q=`, `/api/aggregates`, `/api/delta`,
 `/api/delta/list?class=&status=`, `/api/sparql?query=` (GET or POST).
 

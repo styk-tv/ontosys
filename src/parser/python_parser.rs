@@ -171,7 +171,7 @@ impl PythonParser {
 
         // Check for bases (inheritance)
         let generics = if let Some(paren_start) = after_class.find('(') {
-            if let Some(paren_end) = after_class.find(')') {
+            if let Some(paren_end) = after_class[paren_start..].find(')').map(|i| paren_start + i) {
                 after_class[paren_start + 1..paren_end]
                     .split(',')
                     .map(|b| GenericParam {
@@ -332,6 +332,14 @@ impl PythonParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prose_line_starting_with_class_does_not_panic() {
+        // A docstring line beginning with "class " whose ")" precedes its "(".
+        let parser = PythonParser::new().unwrap();
+        let source = "\"\"\"\nclass with the same cache). Per panel: prompts (canonical)\n\"\"\"\n";
+        assert!(parser.parse_file(Path::new("test.py"), source).is_ok());
+    }
 
     #[test]
     fn parse_python_class() {

@@ -258,7 +258,7 @@ fn find_unquoted_hash(line: &str) -> Option<usize> {
     let mut in_double_quote = false;
     let mut prev_char = '\0';
 
-    for (i, ch) in line.chars().enumerate() {
+    for (i, ch) in line.char_indices() {
         match ch {
             '\'' if !in_double_quote && prev_char != '\\' => in_single_quote = !in_single_quote,
             '"' if !in_single_quote && prev_char != '\\' => in_double_quote = !in_double_quote,
@@ -433,6 +433,14 @@ pub fn extract_comments(source: &str, language: &str) -> FileComments {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn python_inline_comment_after_multibyte_text() {
+        let source = "x = \"\u{1773}\u{1773}\" # TODO: wide text before the hash\n";
+        let result = extract_python_comments(source);
+        assert_eq!(result.comments.len(), 1);
+        assert_eq!(result.comments[0].text, "TODO: wide text before the hash");
+    }
 
     #[test]
     fn rust_doc_comments() {

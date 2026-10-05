@@ -55,3 +55,41 @@ test('visibleIds: all shows everything, focus the neighbourhood, trail adds the 
   assert.ok(!trail.has('future'), 'forward history is not part of the trail');
   assert.equal(L.visibleIds('focus', null, focus, [], -1), null, 'nothing selected: show everything');
 });
+
+test('localName: last segment after # or /, for graphs in any namespace', () => {
+  assert.equal(L.localName('http://codeontology.org/ontology/Function'), 'Function');
+  assert.equal(L.localName('http://usefulinc.com/ns/doap#Project'), 'Project');
+  assert.equal(L.localName('http://example.org/data/project/demo/import/os.path'), 'os.path');
+  assert.equal(L.localName('http://example.org/a/b/'), 'b');
+  assert.equal(L.localName('urn:x'), 'urn:x');
+  assert.equal(L.localName(''), '');
+});
+
+test('shortName: known prefixes are stripped, anything else is its local name', () => {
+  assert.equal(L.shortName('cx:Function'), 'Function');
+  assert.equal(L.shortName('pg:SQLState'), 'SQLState');
+  assert.equal(L.shortName('http://example.org/code/Struct'), 'Struct');
+});
+
+test('displayName: the label when there is one, else the local name of the IRI', () => {
+  assert.equal(L.displayName('handler_00', 'http://example.org/x/fn/handler_00'), 'handler_00');
+  assert.equal(L.displayName(null, 'http://example.org/data/project/demo/import/re'), 're');
+  assert.equal(L.displayName('', 'http://example.org/x/y'), 'y');
+});
+
+test('hashColor: stable per class and spread across the palette', () => {
+  const a = 'http://codeontology.org/ontology/Function';
+  assert.equal(L.hashColor(a), L.hashColor(a));
+  assert.match(L.hashColor(a), /^#[0-9a-f]{6}$/);
+  const many = ['Function', 'Parameter', 'Import', 'Struct', 'Constant', 'Trait', 'Module', 'Enum']
+    .map(c => L.hashColor('http://example.org/code/' + c));
+  assert.ok(new Set(many).size >= 5, 'different classes mostly get different colours');
+});
+
+test('classId: class nodes are group nodes of their own kind', () => {
+  const id = L.classId('http://codeontology.org/ontology/Function');
+  assert.ok(L.isClassNode(id));
+  assert.ok(L.isHub(id), 'class nodes behave as group nodes on the canvas');
+  assert.ok(!L.isClassNode(L.hubId('x', 'in', 'pg:mayRaise')));
+  assert.equal(L.classOf(id), 'http://codeontology.org/ontology/Function');
+});

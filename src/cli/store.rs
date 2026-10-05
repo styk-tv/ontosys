@@ -9,13 +9,15 @@
 //! and the entity-level delta is the same computation `ontosys diff` reports.
 
 use super::diff::{self, Analysis, Graph};
-use oxigraph::io::{RdfFormat, RdfParser};
+use oxigraph::io::{RdfFormat, RdfParseError, RdfParser};
 use oxigraph::model::{NamedNode, Term};
 use oxigraph::sparql::{QueryResults, SparqlEvaluator};
 use oxigraph::store::Store;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 
 pub const BASELINE: &str = "urn:ontosys:baseline";
@@ -39,6 +41,8 @@ pub struct Loaded {
     pub tbox: HashMap<String, (String, Option<String>, Option<String>)>,
     pub triples_current: usize,
     pub triples_baseline: usize,
+    /// Lines that were not valid N-Triples and were left out (both builds).
+    pub skipped_lines: usize,
     pub load_ms: u128,
 }
 
@@ -54,20 +58,12 @@ impl Loaded {
     pub fn load(current_nt: &Path, baseline_nt: Option<&Path>) -> anyhow::Result<Loaded> {
         let t = Instant::now();
         let store = Store::new()?;
-        let cur_text = std::fs::read_to_string(current_nt)?;
-        let mut loader = store.bulk_loader();
-        loader.load_from_slice(RdfParser::from_format(RdfFormat::NTriples).unchecked(), cur_text.as_bytes())?;
-        loader.commit()?;
+        let (cur_text, mut skipped_lines) = load_lenient(&store, std::fs::read_to_string(current_nt)?, None)?;
 
         let (analysis, current_only) = match baseline_nt {
             Some(b) => {
-                let base_text = std::fs::read_to_string(b)?;
-                let mut loader = store.bulk_loader();
-                loader.load_from_slice(
-                    RdfParser::from_format(RdfFormat::NTriples).unchecked().with_default_graph(NamedNode::new(BASELINE)?),
-                    base_text.as_bytes(),
-                )?;
-                loader.commit()?;
+                let (base_text, skipped) = load_lenient(&store, std::fs::read_to_string(b)?, Some(NamedNode::new(BASELINE)?))?;
+                skipped_lines += skipped;
                 (Some(diff::analyze(&base_text, &cur_text)), None)
             }
             None => (None, Some(Graph::load(&cur_text))),
@@ -81,6 +77,7 @@ impl Loaded {
             tbox: HashMap::new(),
             triples_current: 0,
             triples_baseline: 0,
+            skipped_lines,
             load_ms: 0,
         };
         loaded.triples_current = loaded.cur().triples;
@@ -256,7 +253,7 @@ impl Loaded {
         let k = key(iri);
         let label = g.labels.get(&k).cloned().or_else(|| self.cur().labels.get(&k).cloned());
         let types: Vec<String> = g.types.get(&k).map(|t| t.iter().cloned().collect()).unwrap_or_default();
-        json!({ "iri": iri, "label": label, "short": diff::compact(&k), "types": types, "kind": g.section(&k), "status": self.status(iri) })
+        json!({ "iri": iri, "label": label, "short": diff::compact(&k), "types": types, "kind": kind_of(g, &k), "status": self.status(iri) })
     }
 
     /// added / removed / changed / moved / unchanged (null without a baseline)
@@ -383,7 +380,7 @@ impl Loaded {
             "short": diff::compact(&k),
             "side": if side == Side::Baseline { "baseline" } else { "current" },
             "types": types,
-            "kind": g.section(&k),
+            "kind": kind_of(g, &k),
             "status": self.status(iri),
             "properties": props,
             "outgoing": outgoing,
@@ -476,6 +473,78 @@ impl Loaded {
         json!({ "mode": if full { "full" } else { "overview" }, "nodes": node_json, "edges": edge_json })
     }
 
+    // ------------------------------------------------------------------------
+    // Classes: what any graph can be browsed by, grounded or not
+    // ------------------------------------------------------------------------
+
+    /// Every class with instances in the current build, largest first.
+    pub fn classes(&self) -> Vec<Value> {
+        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+        for ts in self.cur().types.values() {
+            for t in ts.iter().filter(|t| !t.starts_with("owl:")) {
+                *counts.entry(t.as_str()).or_default() += 1;
+            }
+        }
+        let mut v: Vec<(&str, usize)> = counts.into_iter().collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+        v.into_iter()
+            .map(|(c, n)| {
+                let iri = expand(c);
+                let label = self.tbox.get(&iri).map(|t| t.0.clone()).filter(|l| !l.is_empty()).unwrap_or_else(|| local_name(&iri).to_string());
+                json!({ "iri": iri, "short": c, "label": label, "count": n })
+            })
+            .collect()
+    }
+
+    /// How classes link: (subject class, predicate, object class) with the number
+    /// of triples, for the `limit` most frequent combinations.
+    pub fn class_links(&self, limit: usize) -> Vec<Value> {
+        let types = &self.cur().types;
+        let mut counts: HashMap<(&str, String, &str), usize> = HashMap::new();
+        for q in self.store.quads_for_pattern(None, None, None, Some(oxigraph::model::GraphNameRef::DefaultGraph)).flatten() {
+            let Term::NamedNode(o) = &q.object else { continue };
+            if q.predicate.as_str() == RDF_TYPE {
+                continue;
+            }
+            let oxigraph::model::NamedOrBlankNode::NamedNode(s) = &q.subject else { continue };
+            let (Some(st), Some(ot)) = (types.get(&key(s.as_str())), types.get(&key(o.as_str()))) else { continue };
+            for a in st.iter().filter(|t| !t.starts_with("owl:")) {
+                for b in ot.iter().filter(|t| !t.starts_with("owl:")) {
+                    *counts.entry((a.as_str(), q.predicate.as_str().to_string(), b.as_str())).or_default() += 1;
+                }
+            }
+        }
+        let mut v: Vec<_> = counts.into_iter().collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        v.into_iter()
+            .take(limit)
+            .map(|((a, p, b), n)| json!({
+                "source": expand(a), "target": expand(b), "p": diff::compact(&key(&p)),
+                "label": self.tbox.get(&p).map(|t| t.0.clone()).filter(|l| !l.is_empty()).unwrap_or_else(|| local_name(&p).to_string()),
+                "count": n,
+            }))
+            .collect()
+    }
+
+    /// One page of a class's members, sorted by name, optionally filtered by a
+    /// case-insensitive substring of the name.
+    pub fn class_members(&self, class: &str, q: &str, offset: usize, limit: usize) -> Value {
+        let g = self.cur();
+        let c = diff::compact(&key(class));
+        let q = q.trim().to_lowercase();
+        let mut v: Vec<(String, &String)> = g
+            .types
+            .iter()
+            .filter(|(_, ts)| ts.contains(&c))
+            .map(|(k, _)| (g.labels.get(k).cloned().unwrap_or_else(|| local_name(unkey(k)).to_string()), k))
+            .filter(|(l, _)| q.is_empty() || l.to_lowercase().contains(&q))
+            .collect();
+        v.sort();
+        let total = v.len();
+        let items: Vec<Value> = v.into_iter().skip(offset).take(limit).map(|(_, k)| self.brief(unkey(k), Side::Current)).collect();
+        json!({ "items": items, "total": total, "offset": offset })
+    }
+
     pub fn delta_summary(&self) -> Option<Value> {
         let a = self.analysis.as_ref()?;
         let mut sections = Vec::new();
@@ -526,6 +595,58 @@ impl Loaded {
             .collect();
         json!({ "items": items, "total": total, "offset": offset })
     }
+}
+
+/// Bulk-load N-Triples into `store`, leaving out lines that are not valid
+/// N-Triples instead of refusing the file (the parser resumes at the next line).
+/// Returns the text the label/type index should read — without the skipped
+/// lines, so it describes exactly what the store holds — and how many were skipped.
+fn load_lenient(store: &Store, text: String, graph: Option<NamedNode>) -> anyhow::Result<(String, usize)> {
+    // Checked parsing: an IRI the store accepted but the API would refuse
+    // (spaces, brackets) is skipped here rather than failing on selection.
+    let parser = || {
+        let p = RdfParser::from_format(RdfFormat::NTriples);
+        match &graph {
+            Some(g) => p.with_default_graph(g.clone()),
+            None => p,
+        }
+    };
+    let errors = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&errors);
+    let mut loader = store.bulk_loader().on_parse_error(move |e| match e {
+        RdfParseError::Syntax(_) => {
+            counter.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+        e => Err(e),
+    });
+    loader.load_from_slice(parser(), text.as_bytes())?;
+    loader.commit()?;
+    if errors.load(Ordering::Relaxed) == 0 {
+        return Ok((text, 0));
+    }
+    // Rare path: find the exact lines once, so the index skips the same ones.
+    let bad: BTreeSet<u64> = parser()
+        .for_slice(text.as_bytes())
+        .filter_map(|r| r.err().and_then(|e| e.location()).map(|l| l.start.line))
+        .collect();
+    let clean: Vec<&str> = text.lines().enumerate().filter(|(i, _)| !bad.contains(&(*i as u64))).map(|(_, l)| l).collect();
+    Ok((clean.join("\n") + "\n", bad.len()))
+}
+
+/// What an entity is drawn and listed as: its report section when ontosys
+/// knows the class, otherwise its own (first) class.
+fn kind_of(g: &Graph, k: &str) -> String {
+    match g.section(k) {
+        "other" => g.types.get(k).and_then(|ts| ts.iter().find(|t| !t.starts_with("owl:"))).map(|t| expand(t)).unwrap_or_else(|| "other".into()),
+        s => s.to_string(),
+    }
+}
+
+/// The last segment of an IRI (after `#`, else after `/`).
+pub fn local_name(iri: &str) -> &str {
+    let t = iri.trim_end_matches(['/', '#']);
+    t.rsplit(['#', '/']).next().filter(|s| !s.is_empty()).unwrap_or(t)
 }
 
 /// `pg:Foo` → full IRI (only the prefixes ontosys emits).

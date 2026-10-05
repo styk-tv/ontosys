@@ -61,7 +61,49 @@
   }
 
   function isHub(id) {
-    return typeof id === 'string' && id.startsWith('group:');
+    return typeof id === 'string' && (id.startsWith('group:') || id.startsWith('class:'));
+  }
+
+  /** Node id of a class on the class map; it pages its members like a group node. */
+  function classId(cls) {
+    return 'class:' + cls;
+  }
+
+  function isClassNode(id) {
+    return typeof id === 'string' && id.startsWith('class:');
+  }
+
+  function classOf(id) {
+    return isClassNode(id) ? id.slice('class:'.length) : null;
+  }
+
+  /** Last segment of an IRI, after `#` or `/`. */
+  function localName(iri) {
+    const t = String(iri || '').replace(/[#/]+$/, '');
+    const i = Math.max(t.lastIndexOf('#'), t.lastIndexOf('/'));
+    return i >= 0 && i < t.length - 1 ? t.slice(i + 1) : t;
+  }
+
+  /** A class or predicate as a reader names it: prefix stripped, else local name. */
+  function shortName(k) {
+    const p = pk(k);
+    const m = /^(pg|cx|pgcat|rdfs?|owl):(.*)$/.exec(p);
+    return m ? m[2] : localName(p);
+  }
+
+  /** What to call an entity: its label, else the local name of its IRI. */
+  function displayName(label, iri) {
+    return label || localName(iri);
+  }
+
+  // Colours for classes ontosys has no assigned colour for: readable on all
+  // three themes, assigned by a stable hash of the class IRI.
+  const PALETTE = ['#4677c9', '#d27c2c', '#2f9d8f', '#b24a9e', '#6a5acd', '#c3942a', '#df5b55', '#5f8f3d',
+    '#8e4aa8', '#3b9bd4', '#a3779a', '#7d8a2e', '#c0589f', '#0f8b8d', '#9563d4', '#b8860b'];
+  function hashColor(k) {
+    let h = 2166136261;
+    for (const c of String(k)) h = Math.imul(h ^ c.codePointAt(0), 16777619) >>> 0;
+    return PALETTE[h % PALETTE.length];
   }
 
   /** Identity of a drawn link; the same relation always yields the same key. */
@@ -83,5 +125,6 @@
     return keep;
   }
 
-  return { GROUP_MAX, GROUP_PAGE, pk, family, FAMILIES, shouldGroup, hubId, isHub, linkKey, visibleIds };
+  return { GROUP_MAX, GROUP_PAGE, pk, family, FAMILIES, shouldGroup, hubId, isHub, classId, isClassNode, classOf,
+    localName, shortName, displayName, hashColor, linkKey, visibleIds };
 });
