@@ -445,6 +445,7 @@ impl RustParser {
             visibility: vis,
             type_annotation,
             value: None,
+            is_variable: false,
             doc_comment: doc.clone(),
             location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
         })

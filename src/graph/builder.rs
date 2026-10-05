@@ -139,6 +139,10 @@ impl GraphBuilder {
             ));
         }
 
+        if let Some(loc) = &node.location {
+            self.add_location_triples(&import_iri, loc);
+        }
+
         Ok(())
     }
 
@@ -676,11 +680,11 @@ impl GraphBuilder {
     fn process_const(&mut self, node: &ConstNode, parent_iri: &Iri) -> Result<(), PipelineError> {
         let const_iri = Iri::new(format!("{}/const/{}", parent_iri.as_str(), node.name));
 
-        // Type triple
+        // Type triple: a constant, or a module-level variable
         self.triples.add(Triple::new(
             const_iri.clone(),
             rdf::type_(),
-            CODE.iri("Constant"),
+            CODE.iri(if node.is_variable { "Variable" } else { "Constant" }),
         ));
 
         // Label
@@ -715,6 +719,10 @@ impl GraphBuilder {
             ));
         }
 
+        if let Some(loc) = &node.location {
+            self.add_location_triples(&const_iri, loc);
+        }
+
         Ok(())
     }
 
@@ -744,6 +752,10 @@ impl GraphBuilder {
             ));
         }
 
+        if let Some(loc) = &node.location {
+            self.add_location_triples(&static_iri, loc);
+        }
+
         Ok(())
     }
 
@@ -770,6 +782,10 @@ impl GraphBuilder {
             CODE.iri("aliasedType"),
             Literal::string(&node.aliased_type),
         ));
+
+        if let Some(loc) = &node.location {
+            self.add_location_triples(&alias_iri, loc);
+        }
 
         Ok(())
     }
@@ -971,6 +987,39 @@ fn visibility_to_string(vis: &crate::parser::Visibility) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every named node can be placed: file, lines (finding: constants, statics,
+    /// type aliases and imports used to carry no location at all).
+    #[test]
+    fn every_named_node_carries_its_location() {
+        let at = |line| Some(SourceLocation::new("pkg/mod.py", line, 0, line, 10));
+        let nodes = vec![
+            AstNode::Const(ConstNode { name: "LIMIT".into(), visibility: crate::parser::Visibility::Public, type_annotation: None,
+                value: Some("10".into()), is_variable: false, doc_comment: None, location: at(3) }),
+            AstNode::Const(ConstNode { name: "logger".into(), visibility: crate::parser::Visibility::Public, type_annotation: Some("Logger".into()),
+                value: None, is_variable: true, doc_comment: None, location: at(4) }),
+            AstNode::Static(StaticNode { name: "COUNTER".into(), visibility: crate::parser::Visibility::Public, type_annotation: None,
+                is_mutable: true, doc_comment: None, location: at(5) }),
+            AstNode::TypeAlias(TypeAliasNode { name: "Id".into(), visibility: crate::parser::Visibility::Public, generics: vec![],
+                aliased_type: "u64".into(), doc_comment: None, location: at(6) }),
+            AstNode::Use(UseNode { path: "os.path".into(), alias: None, is_glob: false, visibility: crate::parser::Visibility::Private, location: at(1) }),
+        ];
+        let triples = GraphBuilder::new("p").build_from_ast(&nodes).unwrap();
+        let facts = |label: &str| -> Vec<String> {
+            let subject = triples.iter().find(|t| t.predicate.as_str().ends_with("rdf-schema#label") && t.object.to_string().contains(&format!("\"{}\"", label)))
+                .unwrap_or_else(|| panic!("no node labelled {}", label)).subject.clone();
+            triples.iter().filter(|t| t.subject == subject).map(|t| format!("{} {}", t.predicate.as_str().rsplit(['#', '/']).next().unwrap(), t.object)).collect()
+        };
+        for (label, line) in [("LIMIT", 3), ("logger", 4), ("COUNTER", 5), ("Id", 6)] {
+            let f = facts(label);
+            assert!(f.iter().any(|x| x.starts_with("filePath") && x.contains("pkg/mod.py")), "{} has no filePath: {:?}", label, f);
+            assert!(f.iter().any(|x| x.starts_with("startLine") && x.contains(&line.to_string())), "{} has no startLine: {:?}", label, f);
+        }
+        assert!(facts("LIMIT").iter().any(|x| x.starts_with("type") && x.ends_with("Constant>")));
+        assert!(facts("logger").iter().any(|x| x.starts_with("type") && x.ends_with("Variable>")), "a non-constant module binding is a Variable");
+        let import_has_path = triples.iter().filter(|t| t.subject.to_string().contains("import")).any(|t| t.predicate.as_str().ends_with("filePath"));
+        assert!(import_has_path, "imports carry their file");
+    }
 
     #[test]
     fn build_simple_graph() {

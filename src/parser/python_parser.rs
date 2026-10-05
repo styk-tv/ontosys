@@ -24,11 +24,17 @@ impl PythonParser {
 
     fn extract_items(&self, source: &str, path: &Path, nodes: &mut Vec<AstNode>) -> Result<(), PipelineError> {
         let lines: Vec<&str> = source.lines().collect();
+        let starts = statement_starts(&lines);
         let mut current_doc: Option<String> = None;
         let mut current_decorators: Vec<String> = Vec::new();
         let mut in_class: Option<(String, usize)> = None; // (name, indent)
 
         for (line_num, line) in lines.iter().enumerate() {
+            // Lines inside a string, brackets or a backslash continuation are
+            // part of an earlier statement, never a definition of their own.
+            if !starts[line_num] {
+                continue;
+            }
             let trimmed = line.trim();
             let indent = line.len() - line.trim_start().len();
 
@@ -91,6 +97,17 @@ impl PythonParser {
                 current_doc = None;
                 current_decorators.clear();
                 continue;
+            }
+
+            // Module-level assignments (constants and variables)
+            if indent == 0 {
+                let assigned = module_assignments(line, line_num, statement_end(&starts, line_num), path);
+                if !assigned.is_empty() {
+                    nodes.extend(assigned.into_iter().map(AstNode::Const));
+                    current_doc = None;
+                    current_decorators.clear();
+                    continue;
+                }
             }
 
             // Reset doc/decorators on other content
@@ -329,9 +346,249 @@ impl PythonParser {
     }
 }
 
+/// For each line, whether it begins a new statement: not inside a string,
+/// open brackets or a backslash continuation of the line before.
+fn statement_starts(lines: &[&str]) -> Vec<bool> {
+    const TRIPLE_DOUBLE: &str = "\"\"\"";
+    const TRIPLE_SINGLE: &str = "'''";
+    let mut starts = Vec::with_capacity(lines.len());
+    let mut quote: Option<&str> = None; // open string delimiter
+    let mut depth: usize = 0;
+    let mut continued = false;
+    for line in lines {
+        starts.push(quote.is_none() && depth == 0 && !continued);
+        continued = false;
+        let b = line.as_bytes();
+        let mut i = 0;
+        while i < b.len() {
+            if let Some(q) = quote {
+                if b[i] == b'\\' {
+                    if i + 1 == b.len() {
+                        continued = true;
+                    }
+                    i += 2;
+                    continue;
+                }
+                if b[i..].starts_with(q.as_bytes()) {
+                    i += q.len();
+                    quote = None;
+                    continue;
+                }
+                i += 1;
+                continue;
+            }
+            match b[i] {
+                b'#' => break,
+                b'"' | b'\'' => {
+                    let triple = if b[i] == b'"' { TRIPLE_DOUBLE } else { TRIPLE_SINGLE };
+                    let q = if b[i..].starts_with(triple.as_bytes()) {
+                        triple
+                    } else if b[i] == b'"' {
+                        "\""
+                    } else {
+                        "'"
+                    };
+                    quote = Some(q);
+                    i += q.len();
+                    continue;
+                }
+                b'(' | b'[' | b'{' => depth += 1,
+                b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+                b'\\' if i + 1 == b.len() => continued = true,
+                _ => {}
+            }
+            i += 1;
+        }
+        // A single-quoted string ends with its line unless the line continues.
+        if matches!(quote, Some("\"") | Some("'")) && !continued {
+            quote = None;
+        }
+    }
+    starts
+}
+
+/// Last line (1-based) of the statement that starts at `line_num` (0-based).
+fn statement_end(starts: &[bool], line_num: usize) -> usize {
+    let mut end = line_num;
+    while end + 1 < starts.len() && !starts[end + 1] {
+        end += 1;
+    }
+    end + 1
+}
+
+/// Python's `str.isupper()`: at least one cased character, none lowercase.
+fn python_is_upper(name: &str) -> bool {
+    name.chars().any(|c| c.is_uppercase()) && !name.chars().any(|c| c.is_lowercase())
+}
+
+fn is_identifier(s: &str) -> bool {
+    const KEYWORDS: &[&str] = &[
+        "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del",
+        "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in", "is", "lambda", "nonlocal",
+        "not", "or", "pass", "raise", "return", "try", "while", "with", "yield",
+    ];
+    let mut chars = s.chars();
+    matches!(chars.next(), Some(c) if c.is_alphabetic() || c == '_')
+        && chars.all(|c| c.is_alphanumeric() || c == '_')
+        && !KEYWORDS.contains(&s)
+}
+
+/// The names a module-level statement assigns: each target of `A = B = …`,
+/// or `NAME: T = …`. Tuple, attribute and subscript targets, augmented
+/// assignment, comparisons and bare annotations assign nothing here.
+fn module_assignments(line: &str, line_num: usize, end_line: usize, path: &Path) -> Vec<ConstNode> {
+    // Split the first line at top-level `=` signs (not `==`, `<=`, `+=`, `:=`, …).
+    let b = line.as_bytes();
+    let mut parts: Vec<&str> = Vec::new();
+    let (mut start, mut depth, mut i) = (0, 0usize, 0);
+    let mut quote: Option<u8> = None;
+    let mut code_end = b.len();
+    while i < b.len() {
+        let c = b[i];
+        if let Some(q) = quote {
+            if c == b'\\' {
+                i += 2;
+                continue;
+            }
+            if c == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            b'#' => {
+                code_end = i;
+                break;
+            }
+            b'"' | b'\'' => quote = Some(c),
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+            b'=' if depth == 0 => {
+                if b.get(i + 1) == Some(&b'=') {
+                    i += 2; // comparison
+                    continue;
+                }
+                if i > 0 && b"=!<>:+-*/%&|^@".contains(&b[i - 1]) {
+                    if parts.is_empty() {
+                        return Vec::new(); // augmented assignment, walrus or comparison first
+                    }
+                    i += 1;
+                    continue;
+                }
+                parts.push(&line[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    if parts.is_empty() {
+        return Vec::new();
+    }
+    let value = line[start.min(code_end)..code_end].trim();
+    let single = parts.len() == 1;
+    parts
+        .into_iter()
+        .filter_map(|target| {
+            let target = target.trim();
+            let (name, annotation) = match target.split_once(':') {
+                Some((n, t)) if single => (n.trim(), Some(t.trim().to_string())),
+                Some(_) => return None,
+                None => (target, None),
+            };
+            is_identifier(name).then(|| ConstNode {
+                name: name.to_string(),
+                visibility: Visibility::Public,
+                type_annotation: annotation.filter(|t| !t.is_empty()),
+                value: (!value.is_empty()).then(|| value.chars().take(200).collect()),
+                is_variable: !python_is_upper(name),
+                doc_comment: None,
+                location: Some(SourceLocation::new(path, line_num + 1, 0, end_line, line.len())),
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Module-level assignments, by the rule Python's own `ast` gives: direct
+    /// module children only; each target of `A = B = …`; `NAME: T = …` but not a
+    /// bare `NAME: T`; no tuple, attribute, subscript or augmented targets; nothing
+    /// inside strings, brackets, continuations or indented blocks.
+    #[test]
+    fn module_assignments_follow_python_rules() {
+        let source = r#""""Module doc.
+FAKE_IN_DOC = 1
+class FakeInDoc:
+"""
+import os
+TAXONOMY_VERSION = "legacy-9-v1"
+LEVEL2_LABELS = (
+    "a",
+)
+CONFIG = dict(
+FOO_KWARG=1,
+)
+A = B = 3
+logger: Logger = get_logger()
+bare: int
+x, y = 1, 2
+obj.attr = 3
+items[0] = 1
+COUNT += 1
+EQ == 3
+if True:
+    NESTED = 1
+s = """
+IN_STRING = 2
+"""
+long_value = 1 + \
+2
+AFTER = 'x'  # comment = not a target
+LAMBDA = lambda v: v == 1
+def f():
+    INNER = 1
+"#;
+        let parser = PythonParser::new().unwrap();
+        let nodes = parser.parse_file(Path::new("pkg/mod.py"), source).unwrap();
+        let found: Vec<(String, bool, usize)> = nodes
+            .iter()
+            .filter_map(|n| match n {
+                AstNode::Const(c) => Some((c.name.clone(), c.is_variable, c.location.as_ref().unwrap().start_line)),
+                _ => None,
+            })
+            .collect();
+        let expect: Vec<(String, bool, usize)> = [
+            ("TAXONOMY_VERSION", false, 6), ("LEVEL2_LABELS", false, 7), ("CONFIG", false, 10),
+            ("A", false, 13), ("B", false, 13), ("logger", true, 14), ("s", true, 23),
+            ("long_value", true, 26), ("AFTER", false, 28), ("LAMBDA", false, 29),
+        ].iter().map(|(n, v, l)| (n.to_string(), *v, *l)).collect();
+        assert_eq!(found, expect);
+        let annotated = nodes.iter().find_map(|n| match n { AstNode::Const(c) if c.name == "logger" => c.type_annotation.clone(), _ => None });
+        assert_eq!(annotated.as_deref(), Some("Logger"));
+        assert!(!nodes.iter().any(|n| matches!(n, AstNode::Struct(s) if s.name == "FakeInDoc")), "nothing inside a docstring is a definition");
+        assert!(nodes.iter().any(|n| matches!(n, AstNode::Function(f) if f.name == "f")), "definitions after strings are still found");
+    }
+
+    #[test]
+    fn non_ascii_text_in_strings_is_scanned_by_byte_safely() {
+        let source = "MSG = \"\u{2713} done\"\nDOC = \"\"\"\n\u{2713}\u{2713}\"\"\"\nNEXT = '\u{e9}'\n";
+        let parser = PythonParser::new().unwrap();
+        let nodes = parser.parse_file(Path::new("m.py"), source).unwrap();
+        let names: Vec<&str> = nodes.iter().filter_map(|n| match n { AstNode::Const(c) => Some(c.name.as_str()), _ => None }).collect();
+        assert_eq!(names, vec!["MSG", "DOC", "NEXT"]);
+    }
+
+    #[test]
+    fn python_is_upper_matches_str_isupper() {
+        for (name, upper) in [("TAXONOMY_VERSION", true), ("_PRIVATE", true), ("T1", true), ("__all__", false),
+                              ("logger", false), ("Mixed", false), ("_1", false)] {
+            assert_eq!(python_is_upper(name), upper, "{}", name);
+        }
+    }
 
     #[test]
     fn prose_line_starting_with_class_does_not_panic() {

@@ -364,71 +364,37 @@ fn discover_files(
     languages: &[Language],
     exclude_patterns: &[String],
 ) -> anyhow::Result<Vec<std::path::PathBuf>> {
-    use walkdir::WalkDir;
-
+    let _ = exclude_patterns; // TODO: config exclude patterns are not applied yet
     let extensions: std::collections::HashSet<&str> = languages
         .iter()
         .flat_map(|l| l.extensions())
         .copied()
         .collect();
-
-    let exclude_dirs: std::collections::HashSet<&str> = [
-        "node_modules", "target", "__pycache__", "venv", ".venv",
-        "dist", "build", ".git", ".ontosys"
-    ].into_iter().collect();
-
-    let files: Vec<_> = WalkDir::new(root)
-        .into_iter()
-        .filter_entry(|e| {
-            let name = e.file_name().to_string_lossy();
-            !exclude_dirs.contains(name.as_ref())
-        })
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            if !e.file_type().is_file() {
-                return false;
-            }
-            e.path()
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| extensions.contains(ext))
-                .unwrap_or(false)
-        })
-        .map(|e| e.into_path())
-        .collect();
-
-    Ok(files)
+    Ok(walk_sources(root, |ext| extensions.contains(ext)))
 }
 
 fn discover_markdown_files(root: &Path) -> anyhow::Result<Vec<std::path::PathBuf>> {
-    use walkdir::WalkDir;
+    Ok(walk_sources(root, |ext| ext.eq_ignore_ascii_case("md")))
+}
 
-    let exclude_dirs: std::collections::HashSet<&str> = [
-        "node_modules", "target", "__pycache__", "venv", ".venv",
-        "dist", "build", ".git", ".ontosys"
-    ].into_iter().collect();
-
-    let files: Vec<_> = WalkDir::new(root)
-        .into_iter()
-        .filter_entry(|e| {
-            let name = e.file_name().to_string_lossy();
-            !exclude_dirs.contains(name.as_ref())
-        })
+/// Files under `root` whose extension `keep` accepts. The repository boundary
+/// is git's: `.gitignore`, `.git/info/exclude` and the global excludes apply
+/// (a virtualenv or build output is not part of the project); hidden but
+/// tracked directories such as `.github/` are kept. Dependency and output
+/// directories are skipped even where nothing ignores them.
+fn walk_sources(root: &Path, keep: impl Fn(&str) -> bool) -> Vec<std::path::PathBuf> {
+    const SKIP_DIRS: &[&str] = &["node_modules", "target", "__pycache__", "venv", ".venv", "dist", "build", ".git", ".ontosys"];
+    let mut files: Vec<std::path::PathBuf> = ignore::WalkBuilder::new(root)
+        .hidden(false)
+        .filter_entry(|e| !SKIP_DIRS.contains(&e.file_name().to_string_lossy().as_ref()))
+        .build()
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            if !e.file_type().is_file() {
-                return false;
-            }
-            e.path()
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| ext.eq_ignore_ascii_case("md"))
-                .unwrap_or(false)
-        })
+        .filter(|e| e.file_type().map_or(false, |t| t.is_file()))
+        .filter(|e| e.path().extension().and_then(|x| x.to_str()).map_or(false, &keep))
         .map(|e| e.into_path())
         .collect();
-
-    Ok(files)
+    files.sort();
+    files
 }
 
 fn process_file(
@@ -437,8 +403,10 @@ fn process_file(
     root: &Path,
 ) -> anyhow::Result<Vec<AstNode>> {
     let source = fs::read_to_string(path)?;
-    let _relative_path = path.strip_prefix(root).unwrap_or(path);
-    parser.parse_file(path, &source).map_err(|e| anyhow::anyhow!("{}", e))
+    // Locations are recorded relative to the repository, so they are the same
+    // in every checkout and do not leak where it lives.
+    let relative_path = path.strip_prefix(root).unwrap_or(path);
+    parser.parse_file(relative_path, &source).map_err(|e| anyhow::anyhow!("{}", e))
 }
 
 /// Triples of entities typed with one of `classes` (in the pg: namespace), keeping
@@ -591,4 +559,31 @@ fn extract_label(uri: &str) -> String {
         .next()
         .unwrap_or(uri)
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The repository boundary is git's: ignored files (a virtualenv, build
+    /// output) are not part of the project, hidden but tracked ones are.
+    #[test]
+    fn discovery_respects_gitignore_and_keeps_hidden_tracked_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir(root.join(".git")).unwrap();
+        std::fs::write(root.join(".gitignore"), ".venv-agent/\n*.gen.py\n").unwrap();
+        for f in ["src/app.py", ".venv-agent/lib/site.py", "src/skip.gen.py", ".github/scripts/ci.py", "README.md", ".venv-agent/NOTES.md"] {
+            let p = root.join(f);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, "x = 1\n").unwrap();
+        }
+        let rel = |v: Vec<std::path::PathBuf>| -> Vec<String> {
+            let mut v: Vec<String> = v.iter().map(|p| p.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/")).collect();
+            v.sort();
+            v
+        };
+        assert_eq!(rel(discover_files(root, &[Language::Python], &[]).unwrap()), vec![".github/scripts/ci.py", "src/app.py"]);
+        assert_eq!(rel(discover_markdown_files(root).unwrap()), vec!["README.md"]);
+    }
 }

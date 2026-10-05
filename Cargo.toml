@@ -37,6 +37,7 @@ anyhow = "1.0"
 
 # Utilities
 walkdir = "2.5"
+ignore = "0.4"
 open = "5"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

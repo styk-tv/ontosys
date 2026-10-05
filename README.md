@@ -108,15 +108,24 @@ ontosys stats
 |----------|-----------|------------|
 | C | `.c`, `.h` | tree-sitter syntax tree: functions (signature, header comment, calls, identifiers, diagnostic messages, body hash), prototypes, structs/fields, enums, typedefs, macros, globals, includes |
 | Rust | `.rs` | Declarations (line-based) |
-| Python | `.py` | Declarations (line-based) |
+| Python | `.py` | Declarations (line-based), including module-level assignments: `UPPER_CASE` names as constants, others as variables |
 | TypeScript | `.ts`, `.tsx` | Declarations (line-based) |
 | JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` | Declarations (line-based) |
 | Markdown | `.md` | Docs layer: ATX-heading outline + verbatim content into `docs.json` |
 
 C is parsed into a real syntax tree with tree-sitter-c. The other languages
 use line-based heuristic extraction of declarations (functions,
-structs/classes, traits, enums, imports, …) with source locations — not a
-full syntax tree.
+structs/classes, traits, enums, constants, imports, …) — not a full syntax
+tree. Every declaration carries its location: `filePath` relative to the
+repository, start and end line. Python lines inside strings, brackets or
+backslash continuations are never read as declarations; module-level
+assignments follow the rule of Python's own `ast` (each target of `A = B = …`
+and `NAME: T = …`; not tuple, attribute or augmented targets, nor anything
+nested in a block).
+
+The project is what git considers the repository: files ignored by
+`.gitignore`, `.git/info/exclude` or the global excludes (a virtualenv, build
+output) are not read; hidden but tracked directories such as `.github/` are.
 
 C extraction details:
 
@@ -473,7 +482,8 @@ Edit `.ontosys/config.json` to customize:
 
 `project` is optional: it fixes the name used in instance IRIs (default: the
 `remote.origin.url` basename, else the directory name). `c` is added by
-`ontosys init` when the repository contains `.c` files.
+`ontosys init` when the repository contains `.c` files. `exclude_patterns` is
+not applied yet; use `.gitignore` (or `.git/info/exclude`) to leave files out.
 
 ## References
 

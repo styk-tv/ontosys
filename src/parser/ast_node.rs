@@ -318,6 +318,9 @@ pub struct ConstNode {
     pub visibility: Visibility,
     pub type_annotation: Option<String>,
     pub value: Option<String>,
+    /// A module-level binding that is not a constant by its language's
+    /// convention (Python: a name that is not UPPER_CASE).
+    pub is_variable: bool,
     pub doc_comment: Option<String>,
     pub location: Option<SourceLocation>,
 }
