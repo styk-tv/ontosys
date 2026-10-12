@@ -89,6 +89,7 @@ fn create_config(ontosys_path: &Path, git_root: &Path) -> anyhow::Result<()> {
         include_private: true,
         extract_docs: true,
         extract_calls: true,
+        redact_emails: true,
     };
 
     let config_path = ontosys_path.join("config.json");
@@ -130,4 +131,7 @@ pub struct Config {
     pub include_private: bool,
     pub extract_docs: bool,
     pub extract_calls: bool,
+    /// Replace every email address in literals and docs.json with `<email>`
+    #[serde(default)]
+    pub redact_emails: bool,
 }

@@ -219,6 +219,14 @@ pub async fn run(
     info("Saving outputs...");
     let data_path = ontosys_path.join("data");
 
+    if config.redact_emails {
+        triples = redact_triples(triples);
+    }
+
+    // A graph a strict loader would refuse is not written at all.
+    let nt_text = triples.to_ntriples();
+    require_strict(&nt_text)?;
+
     // Save as Turtle
     let turtle_path = data_path.join("graph.ttl");
     fs::write(&turtle_path, triples.to_turtle())?;
@@ -229,7 +237,7 @@ pub async fn run(
 
     // Save as N-Triples
     let nt_path = data_path.join("graph.nt");
-    fs::write(&nt_path, triples.to_ntriples())?;
+    fs::write(&nt_path, &nt_text)?;
     println!("  {} graph.nt ({} bytes)",
         style("→").dim(),
         fs::metadata(&nt_path)?.len()
@@ -314,7 +322,11 @@ pub async fn run(
 
         // Save docs.json
         let docs_path = data_path.join("docs.json");
-        fs::write(&docs_path, serde_json::to_string_pretty(&docs_metadata)?)?;
+        let mut docs_json = serde_json::to_value(&docs_metadata)?;
+        if config.redact_emails {
+            redact_json(&mut docs_json);
+        }
+        fs::write(&docs_path, serde_json::to_string_pretty(&docs_json)?)?;
         println!("  {} docs.json ({} bytes)",
             style("→").dim(),
             fs::metadata(&docs_path)?.len()
@@ -330,6 +342,8 @@ pub async fn run(
 
     // Save build metadata
     let metadata = BuildMetadata {
+        ontosys_version: env!("CARGO_PKG_VERSION"),
+        redact_emails: config.redact_emails,
         timestamp: chrono::Utc::now().to_rfc3339(),
         project: project_id.to_string(),
         c_files: c_files.len(),
@@ -440,6 +454,8 @@ const MAX_VIZ_TRIPLES: usize = 250_000;
 
 #[derive(serde::Serialize)]
 struct BuildMetadata {
+    ontosys_version: &'static str,
+    redact_emails: bool,
     timestamp: String,
     project: String,
     c_files: usize,
@@ -561,9 +577,91 @@ fn extract_label(uri: &str) -> String {
         .to_string()
 }
 
+/// `triples` with every email address in a literal replaced by `<email>`.
+fn redact_triples(triples: TripleSet) -> TripleSet {
+    use crate::ontology::redact::emails;
+    use crate::ontology::{Literal, Term};
+    triples
+        .into_iter()
+        .map(|mut t| {
+            if let Term::Literal(l) = &mut t.object {
+                *l = match std::mem::replace(l, Literal::string("")) {
+                    Literal::String(v) => Literal::String(emails(&v)),
+                    Literal::LangString { value, lang } => Literal::LangString { value: emails(&value), lang },
+                    Literal::Typed { value, datatype } => Literal::Typed { value: emails(&value), datatype },
+                };
+            }
+            t
+        })
+        .collect()
+}
+
+/// `v` with every email address in any string replaced by `<email>`.
+fn redact_json(v: &mut serde_json::Value) {
+    use serde_json::Value;
+    match v {
+        Value::String(s) => *s = crate::ontology::redact::emails(s),
+        Value::Array(a) => a.iter_mut().for_each(redact_json),
+        Value::Object(o) => o.values_mut().for_each(redact_json),
+        _ => {}
+    }
+}
+
+/// Refuse to write a graph a strict N-Triples loader would refuse.
+fn require_strict(nt: &str) -> anyhow::Result<()> {
+    let bad = crate::ontology::strict_violations(nt);
+    if bad.is_empty() {
+        return Ok(());
+    }
+    let shown: Vec<String> = bad.iter().take(5).map(|v| format!("line {}: {}", v.line, v.reason)).collect();
+    anyhow::bail!(
+        "graph is not strict N-Triples: {} line(s) refused, e.g. {}",
+        bad.len(),
+        shown.join("; ")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_graph_with_an_invalid_iri_fails_the_build_and_names_the_lines() {
+        let nt = "<http://e/s> <http://e/p> <http://e/o> .\n<http://e/fn/a b> <http://e/p> <http://e/o> .\n";
+        let err = require_strict(nt).expect_err("an invalid IRI must fail the build").to_string();
+        assert!(err.contains("line 2"), "{}", err);
+    }
+
+    #[test]
+    fn redaction_covers_every_literal_kind_and_leaves_iris_alone() {
+        use crate::ontology::{Iri, Literal, Term, Triple};
+        let s = Iri::new("http://e/mail-me");
+        let p = Iri::new("http://e/p");
+        let mut set = TripleSet::new();
+        set.add(Triple::new(s.clone(), p.clone(), Literal::string("ask a@b.io")));
+        set.add(Triple::new(s.clone(), p.clone(), Literal::LangString { value: "c@d.org".into(), lang: "en".into() }));
+        set.add(Triple::new(s.clone(), p.clone(), Literal::Typed { value: "e@f.com".into(), datatype: Iri::new("http://e/t") }));
+        let out = redact_triples(set).to_ntriples();
+        assert!(!out.contains('@') || out.contains("@en"), "{}", out);
+        assert!(!out.contains("a@b.io") && !out.contains("d.org") && !out.contains("f.com"), "{}", out);
+        assert!(out.contains("<http://e/mail-me>"), "the IRI is left alone: {}", out);
+        assert!(out.contains("&lt;email&gt;") || out.contains("<email>"), "{}", out);
+        let _ = Term::iri("x");
+    }
+
+    #[test]
+    fn json_redaction_reaches_nested_strings_and_keys_stay() {
+        let mut v = serde_json::json!({"files": [{"path": "a.md", "text": "mail x@y.io now", "n": 3}]});
+        redact_json(&mut v);
+        assert_eq!(v["files"][0]["text"], "mail <email> now");
+        assert_eq!(v["files"][0]["n"], 3);
+        assert_eq!(v["files"][0]["path"], "a.md");
+    }
+
+    #[test]
+    fn a_valid_graph_passes_the_strict_check() {
+        require_strict("<http://e/s> <http://e/p> \"x y {z}\" .\n").unwrap();
+    }
 
     /// The repository boundary is git's: ignored files (a virtualenv, build
     /// output) are not part of the project, hidden but tracked ones are.

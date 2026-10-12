@@ -21,11 +21,14 @@
 mod entities;
 mod namespaces;
 mod properties;
+pub mod redact;
+mod strict;
 mod triples;
 
 pub use entities::*;
 pub use namespaces::*;
 pub use properties::*;
+pub use strict::{violations as strict_violations, Violation};
 pub use triples::*;
 
 use std::fmt;

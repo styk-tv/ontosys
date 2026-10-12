@@ -23,6 +23,10 @@ pub struct GraphBuilder {
     project_id: String,
     triples: TripleSet,
     blank_node_counter: usize,
+    /// Files already given a File node
+    files_emitted: std::collections::HashSet<String>,
+    /// IRIs already minted for definitions, so two definitions never share one
+    claimed: std::collections::HashSet<String>,
 }
 
 impl GraphBuilder {
@@ -31,7 +35,47 @@ impl GraphBuilder {
             project_id: project_id.into(),
             triples: TripleSet::new(),
             blank_node_counter: 0,
+            files_emitted: std::collections::HashSet::new(),
+            claimed: std::collections::HashSet::new(),
         }
+    }
+
+    /// The parent for a top-level node: the file it was read from, so the same
+    /// name defined in two files is two nodes. A node with no location hangs
+    /// off the project.
+    fn file_scope(&mut self, project_iri: &Iri, loc: Option<&SourceLocation>) -> Iri {
+        let Some(loc) = loc else { return project_iri.clone() };
+        let path = loc.file.to_string_lossy().replace('\\', "/");
+        let iri = Iri::new(format!("{}/file/{}", project_iri.as_str(), iri_segment(&path)));
+        if self.files_emitted.insert(path.clone()) {
+            let language = match path.rsplit('.').next().unwrap_or("") {
+                "rs" => "Rust",
+                "py" => "Python",
+                "ts" | "tsx" => "TypeScript",
+                "js" | "jsx" | "mjs" | "cjs" => "JavaScript",
+                _ => "",
+            };
+            let file = File { iri: iri.clone(), path, language: language.to_string() };
+            self.triples.extend(file.to_triples());
+            self.triples.add(Triple::new(project_iri.clone(), containment::has_file(), iri.clone()));
+        }
+        iri
+    }
+
+    /// Make `iri` unique among definitions: the first keeps it, a later one
+    /// with the same name in the same scope gets its start line appended.
+    fn claim(&mut self, iri: Iri, loc: Option<&SourceLocation>) -> Iri {
+        if self.claimed.insert(iri.as_str().to_string()) {
+            return iri;
+        }
+        let line = loc.map(|l| l.start_line).unwrap_or(0);
+        let mut candidate = Iri::new(format!("{}~L{}", iri.as_str(), line));
+        let mut n = 2;
+        while !self.claimed.insert(candidate.as_str().to_string()) {
+            candidate = Iri::new(format!("{}~L{}-{}", iri.as_str(), line, n));
+            n += 1;
+        }
+        candidate
     }
 
     /// Generate a unique blank node ID
@@ -48,7 +92,8 @@ impl GraphBuilder {
 
         // Process each top-level AST node
         for node in nodes {
-            self.process_node(node, &project.iri)?;
+            let scope = self.file_scope(&project.iri, node.location());
+            self.process_node(node, &scope)?;
         }
 
         Ok(self.triples)
@@ -147,8 +192,9 @@ impl GraphBuilder {
     }
 
     fn process_struct(&mut self, node: &StructNode, parent_iri: &Iri) -> Result<(), PipelineError> {
-        let strct = Struct::new(parent_iri, &node.name)
+        let mut strct = Struct::new(parent_iri, &node.name)
             .with_visibility(convert_visibility(&node.visibility));
+        strct.iri = self.claim(strct.iri.clone(), node.location.as_ref());
 
         let struct_iri = strct.iri.clone();
 
@@ -210,8 +256,9 @@ impl GraphBuilder {
     }
 
     fn process_enum(&mut self, node: &EnumNode, parent_iri: &Iri) -> Result<(), PipelineError> {
-        let enm = Enum::new(parent_iri, &node.name)
+        let mut enm = Enum::new(parent_iri, &node.name)
             .with_visibility(convert_visibility(&node.visibility));
+        enm.iri = self.claim(enm.iri.clone(), node.location.as_ref());
 
         let enum_iri = enm.iri.clone();
 
@@ -255,7 +302,7 @@ impl GraphBuilder {
         enum_iri: &Iri,
         index: usize,
     ) -> Result<(), PipelineError> {
-        let variant_iri = Iri::new(format!("{}/variant/{}", enum_iri.as_str(), variant.name));
+        let variant_iri = Iri::new(format!("{}/variant/{}", enum_iri.as_str(), iri_segment(&variant.name)));
 
         // Type triple
         self.triples.add(Triple::new(
@@ -312,8 +359,9 @@ impl GraphBuilder {
     }
 
     fn process_trait(&mut self, node: &TraitNode, parent_iri: &Iri) -> Result<(), PipelineError> {
-        let trt = Trait::new(parent_iri, &node.name)
+        let mut trt = Trait::new(parent_iri, &node.name)
             .with_visibility(convert_visibility(&node.visibility));
+        trt.iri = self.claim(trt.iri.clone(), node.location.as_ref());
 
         let trait_iri = trt.iri.clone();
 
@@ -468,8 +516,9 @@ impl GraphBuilder {
     }
 
     fn process_function(&mut self, node: &FunctionNode, parent_iri: &Iri) -> Result<(), PipelineError> {
-        let func = Function::new(parent_iri, &node.name)
+        let mut func = Function::new(parent_iri, &node.name)
             .with_visibility(convert_visibility(&node.visibility));
+        func.iri = self.claim(func.iri.clone(), node.location.as_ref());
 
         let func_iri = func.iri.clone();
 
@@ -678,7 +727,10 @@ impl GraphBuilder {
     }
 
     fn process_const(&mut self, node: &ConstNode, parent_iri: &Iri) -> Result<(), PipelineError> {
-        let const_iri = Iri::new(format!("{}/const/{}", parent_iri.as_str(), node.name));
+        let const_iri = self.claim(
+            Iri::new(format!("{}/const/{}", parent_iri.as_str(), iri_segment(&node.name))),
+            node.location.as_ref(),
+        );
 
         // Type triple: a constant, or a module-level variable
         self.triples.add(Triple::new(
@@ -727,7 +779,7 @@ impl GraphBuilder {
     }
 
     fn process_static(&mut self, node: &StaticNode, parent_iri: &Iri) -> Result<(), PipelineError> {
-        let static_iri = Iri::new(format!("{}/static/{}", parent_iri.as_str(), node.name));
+        let static_iri = Iri::new(format!("{}/static/{}", parent_iri.as_str(), iri_segment(&node.name)));
 
         // Type triple
         self.triples.add(Triple::new(
@@ -760,7 +812,7 @@ impl GraphBuilder {
     }
 
     fn process_type_alias(&mut self, node: &TypeAliasNode, parent_iri: &Iri) -> Result<(), PipelineError> {
-        let alias_iri = Iri::new(format!("{}/type/{}", parent_iri.as_str(), node.name));
+        let alias_iri = Iri::new(format!("{}/type/{}", parent_iri.as_str(), iri_segment(&node.name)));
 
         // Type triple
         self.triples.add(Triple::new(
@@ -791,7 +843,7 @@ impl GraphBuilder {
     }
 
     fn process_macro(&mut self, node: &MacroNode, parent_iri: &Iri) -> Result<(), PipelineError> {
-        let macro_iri = Iri::new(format!("{}/macro/{}", parent_iri.as_str(), node.name));
+        let macro_iri = Iri::new(format!("{}/macro/{}", parent_iri.as_str(), iri_segment(&node.name)));
 
         // Type triple
         self.triples.add(Triple::new(
@@ -828,7 +880,7 @@ impl GraphBuilder {
     }
 
     fn process_associated_type(&mut self, node: &AssociatedType, parent_iri: &Iri) -> Result<(), PipelineError> {
-        let type_iri = Iri::new(format!("{}/type/{}", parent_iri.as_str(), node.name));
+        let type_iri = Iri::new(format!("{}/type/{}", parent_iri.as_str(), iri_segment(&node.name)));
 
         // Type triple
         self.triples.add(Triple::new(
@@ -870,7 +922,7 @@ impl GraphBuilder {
             let generic_iri = Iri::new(format!(
                 "{}/generic/{}",
                 parent_iri.as_str(),
-                generic.name
+                iri_segment(&generic.name)
             ));
 
             // Type triple
@@ -1019,6 +1071,83 @@ mod tests {
         assert!(facts("logger").iter().any(|x| x.starts_with("type") && x.ends_with("Variable>")), "a non-constant module binding is a Variable");
         let import_has_path = triples.iter().filter(|t| t.subject.to_string().contains("import")).any(|t| t.predicate.as_str().ends_with("filePath"));
         assert!(import_has_path, "imports carry their file");
+    }
+
+    fn func_at(name: &str, file: &str, line: usize) -> AstNode {
+        AstNode::Function(FunctionNode {
+            name: name.to_string(), visibility: crate::parser::Visibility::Public, generics: vec![], parameters: vec![],
+            return_type: None, is_async: false, is_const: false, is_unsafe: false, is_extern: false, abi: None,
+            body_calls: vec![], doc_comment: None, attributes: vec![],
+            location: Some(SourceLocation::new(file, line, 0, line + 3, 0)),
+        })
+    }
+
+    /// Distinct entities of `class` (by IRI suffix) with the files they carry.
+    fn nodes_of(triples: &TripleSet, class: &str) -> Vec<(String, Vec<String>)> {
+        let rdf_type = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+        let subjects: std::collections::BTreeSet<String> = triples.iter()
+            .filter(|t| t.predicate.as_str() == rdf_type && t.object.to_string().ends_with(&format!("{}>", class)))
+            .map(|t| t.subject.to_string())
+            .collect();
+        subjects.into_iter().map(|s| {
+            let files: std::collections::BTreeSet<String> = triples.iter()
+                .filter(|f| f.subject.to_string() == s && f.predicate.as_str().ends_with("filePath"))
+                .map(|f| f.object.to_string()).collect();
+            (s, files.into_iter().collect())
+        }).collect()
+    }
+
+    /// Finding (sporaxis-91, lab-web, CK-dev): a function name defined in several
+    /// files used to collapse into one node carrying all their locations.
+    #[test]
+    fn same_named_functions_in_different_files_are_distinct_nodes() {
+        let nodes = vec![
+            func_at("dispatch", "v1/dispatch_v2/service.py", 10),
+            func_at("dispatch", "v2/bentoml-gateway/service.py", 11),
+        ];
+        let triples = GraphBuilder::new("p").build_from_ast(&nodes).unwrap();
+        let fns = nodes_of(&triples, "Function");
+        assert_eq!(fns.len(), 2, "one node per definition: {:?}", fns);
+        for (iri, files) in &fns {
+            assert_eq!(files.len(), 1, "{} carries one file, got {:?}", iri, files);
+        }
+    }
+
+    /// The same name defined twice in one file (redefinition, nested helper)
+    /// is still two definitions.
+    #[test]
+    fn same_named_functions_in_one_file_are_distinct_nodes() {
+        let nodes = vec![func_at("render", "ui.js", 5), func_at("render", "ui.js", 90)];
+        let triples = GraphBuilder::new("p").build_from_ast(&nodes).unwrap();
+        assert_eq!(nodes_of(&triples, "Function").len(), 2);
+    }
+
+    /// The identity of a node must not change when the same tree is built twice.
+    #[test]
+    fn node_iris_are_deterministic() {
+        let nodes = vec![func_at("a", "x.py", 1), func_at("a", "y.py", 1), func_at("a", "x.py", 9)];
+        let one = GraphBuilder::new("p").build_from_ast(&nodes).unwrap().to_ntriples();
+        let two = GraphBuilder::new("p").build_from_ast(&nodes).unwrap().to_ntriples();
+        assert_eq!(one, two);
+    }
+
+    /// Finding (all six builds on 2026-10-09): names and import statements are
+    /// minted into IRIs as written, so a use-tree or a destructuring is not
+    /// a valid N-Triples IRI.
+    #[test]
+    fn hostile_names_still_give_strict_n_triples() {
+        let nodes = vec![
+            func_at("files; try { files", "a.js", 1),
+            func_at("[a, b]", "a.js", 2),
+            func_at("pipe|bar<x>\"q\"`^", "dir with space/b.js", 3),
+            AstNode::Use(UseNode { path: "anyhow::{Context, Result}".into(), alias: None, is_glob: false,
+                visibility: crate::parser::Visibility::Private, location: Some(SourceLocation::new("src/main.rs", 1, 0, 1, 30)) }),
+            AstNode::Use(UseNode { path: "json, sys, urllib.error".into(), alias: None, is_glob: false,
+                visibility: crate::parser::Visibility::Private, location: Some(SourceLocation::new("tool.py", 1, 0, 1, 30)) }),
+        ];
+        let nt = GraphBuilder::new("my project").build_from_ast(&nodes).unwrap().to_ntriples();
+        let bad = crate::ontology::strict_violations(&nt);
+        assert!(bad.is_empty(), "{:?}", bad);
     }
 
     #[test]

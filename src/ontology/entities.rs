@@ -102,7 +102,7 @@ impl HasName for Project {
 impl Project {
     pub fn new(id: &str, name: impl Into<String>) -> Self {
         Self {
-            iri: DATA.iri(&format!("project/{}", id)),
+            iri: DATA.iri(&format!("project/{}", iri_segment(id))),
             name: name.into(),
             description: None,
             repository_url: None,
@@ -186,7 +186,7 @@ impl File {
         let path = path.into();
         let safe_path = path.replace('/', "_").replace('.', "_");
         Self {
-            iri: DATA.iri(&format!("file/{}/{}", project_id, safe_path)),
+            iri: DATA.iri(&format!("file/{}/{}", iri_segment(project_id), iri_segment(&safe_path))),
             path,
             language: language.into(),
         }
@@ -246,7 +246,7 @@ impl Module {
     pub fn new(file_iri: &Iri, name: impl Into<String>) -> Self {
         let name = name.into();
         Self {
-            iri: Iri::new(format!("{}/module/{}", file_iri.as_str(), name)),
+            iri: Iri::new(format!("{}/module/{}", file_iri.as_str(), iri_segment(&name))),
             name,
             visibility: Visibility::Private,
         }
@@ -307,7 +307,7 @@ impl Struct {
     pub fn new(parent_iri: &Iri, name: impl Into<String>) -> Self {
         let name = name.into();
         Self {
-            iri: Iri::new(format!("{}/struct/{}", parent_iri.as_str(), name)),
+            iri: Iri::new(format!("{}/struct/{}", parent_iri.as_str(), iri_segment(&name))),
             name,
             visibility: Visibility::Private,
             is_tuple: false,
@@ -379,7 +379,7 @@ impl Trait {
     pub fn new(parent_iri: &Iri, name: impl Into<String>) -> Self {
         let name = name.into();
         Self {
-            iri: Iri::new(format!("{}/trait/{}", parent_iri.as_str(), name)),
+            iri: Iri::new(format!("{}/trait/{}", parent_iri.as_str(), iri_segment(&name))),
             name,
             visibility: Visibility::Private,
             is_unsafe: false,
@@ -450,7 +450,7 @@ impl Enum {
     pub fn new(parent_iri: &Iri, name: impl Into<String>) -> Self {
         let name = name.into();
         Self {
-            iri: Iri::new(format!("{}/enum/{}", parent_iri.as_str(), name)),
+            iri: Iri::new(format!("{}/enum/{}", parent_iri.as_str(), iri_segment(&name))),
             name,
             visibility: Visibility::Private,
         }
@@ -513,7 +513,7 @@ impl Function {
     pub fn new(parent_iri: &Iri, name: impl Into<String>) -> Self {
         let name = name.into();
         Self {
-            iri: Iri::new(format!("{}/fn/{}", parent_iri.as_str(), name)),
+            iri: Iri::new(format!("{}/fn/{}", parent_iri.as_str(), iri_segment(&name))),
             name,
             visibility: Visibility::Private,
             is_async: false,
@@ -607,7 +607,7 @@ impl Field {
     pub fn new(parent_iri: &Iri, name: impl Into<String>) -> Self {
         let name = name.into();
         Self {
-            iri: Iri::new(format!("{}/field/{}", parent_iri.as_str(), name)),
+            iri: Iri::new(format!("{}/field/{}", parent_iri.as_str(), iri_segment(&name))),
             name,
             type_annotation: None,
             visibility: Visibility::Private,
@@ -768,7 +768,7 @@ impl Import {
         let path = path.into();
         let safe_path = path.replace("::", "_").replace('*', "glob");
         Self {
-            iri: Iri::new(format!("{}/import/{}", file_iri.as_str(), safe_path)),
+            iri: Iri::new(format!("{}/import/{}", file_iri.as_str(), iri_segment(&safe_path))),
             path,
             alias: None,
         }
