@@ -41,3 +41,6 @@ SPEC*
 tests/ui/node_modules/
 tests/ui/test-results/
 tests/ui/playwright-report/
+
+# Private working notes (catalog cards, drafts), as in sporaxis.
+_WIP/

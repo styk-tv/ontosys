@@ -491,7 +491,7 @@ impl TypeScriptParser {
             // Find matching closing bracket
             let mut depth = 1;
             let mut end = start + 1;
-            for (i, c) in text[start + 1..].chars().enumerate() {
+            for (i, c) in text[start + 1..].char_indices() {
                 match c {
                     '<' => depth += 1,
                     '>' => {
@@ -550,7 +550,7 @@ impl TypeScriptParser {
             // Find matching closing paren
             let mut depth = 1;
             let mut end = start + 1;
-            for (i, c) in text[start + 1..].chars().enumerate() {
+            for (i, c) in text[start + 1..].char_indices() {
                 match c {
                     '(' | '<' | '{' | '[' => depth += 1,
                     ')' => {
@@ -612,6 +612,21 @@ impl TypeScriptParser {
 
 #[cfg(test)]
 mod tests {
+
+    /// Positions in the generic list are byte offsets: a non-ASCII default
+    /// used to shift the slice (or panic on a char boundary).
+    #[test]
+    fn non_ascii_inside_generics_is_sliced_by_byte() {
+        let nodes = TypeScriptParser::new().unwrap()
+            .parse_file(Path::new("a.ts"), "export interface Labelled<T = \"\u{e9}t\u{e9}\u{e9}\", U> {\n}\n").unwrap();
+        let names: Vec<String> = nodes.iter().find_map(|n| match n {
+            AstNode::Trait(t) => Some(t.generics.iter().map(|g| g.name.clone()).collect()),
+            AstNode::Struct(s) => Some(s.generics.iter().map(|g| g.name.clone()).collect()),
+            _ => None,
+        }).expect("interface parsed");
+        assert_eq!(names, vec!["T".to_string(), "U".to_string()]);
+    }
+
     use super::*;
 
     #[test]

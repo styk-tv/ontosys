@@ -516,56 +516,51 @@ impl RustParser {
     fn extract_generics(&self, text: &str) -> Vec<GenericParam> {
         let mut params = Vec::new();
 
-        if let Some(start) = text.find('<') {
-            if let Some(end) = text.rfind('>') {
-                let generics_str = &text[start + 1..end];
+        if let Some(generics_str) = own_generic_list(text) {
+            for param in split_top_level(generics_str) {
+                let param = param.trim();
+                if param.is_empty() {
+                    continue;
+                }
 
-                // Simple split by comma (doesn't handle nested generics well)
-                for param in generics_str.split(',') {
-                    let param = param.trim();
-                    if param.is_empty() {
-                        continue;
-                    }
+                // Check for lifetime
+                if param.starts_with('\'') {
+                    let name = param.split(':').next().unwrap_or(param).trim();
+                    params.push(GenericParam {
+                        name: name.to_string(),
+                        kind: GenericKind::Lifetime,
+                        bounds: vec![],
+                        default: None,
+                    });
+                }
+                // Check for const generic
+                else if param.starts_with("const ") {
+                    let name = param.trim_start_matches("const ")
+                        .split(':').next().unwrap_or("").trim();
+                    params.push(GenericParam {
+                        name: name.to_string(),
+                        kind: GenericKind::Const,
+                        bounds: vec![],
+                        default: None,
+                    });
+                }
+                // Type parameter
+                else {
+                    let name = param.split(':').next().unwrap_or(param).trim();
+                    let bounds: Vec<String> = if param.contains(':') {
+                        param.split(':').nth(1)
+                            .map(|s| s.split('+').map(|b| b.trim().to_string()).collect())
+                            .unwrap_or_default()
+                    } else {
+                        vec![]
+                    };
 
-                    // Check for lifetime
-                    if param.starts_with('\'') {
-                        let name = param.split(':').next().unwrap_or(param).trim();
-                        params.push(GenericParam {
-                            name: name.to_string(),
-                            kind: GenericKind::Lifetime,
-                            bounds: vec![],
-                            default: None,
-                        });
-                    }
-                    // Check for const generic
-                    else if param.starts_with("const ") {
-                        let name = param.trim_start_matches("const ")
-                            .split(':').next().unwrap_or("").trim();
-                        params.push(GenericParam {
-                            name: name.to_string(),
-                            kind: GenericKind::Const,
-                            bounds: vec![],
-                            default: None,
-                        });
-                    }
-                    // Type parameter
-                    else {
-                        let name = param.split(':').next().unwrap_or(param).trim();
-                        let bounds: Vec<String> = if param.contains(':') {
-                            param.split(':').nth(1)
-                                .map(|s| s.split('+').map(|b| b.trim().to_string()).collect())
-                                .unwrap_or_default()
-                        } else {
-                            vec![]
-                        };
-
-                        params.push(GenericParam {
-                            name: name.to_string(),
-                            kind: GenericKind::Type,
-                            bounds,
-                            default: None,
-                        });
-                    }
+                    params.push(GenericParam {
+                        name: name.to_string(),
+                        kind: GenericKind::Type,
+                        bounds,
+                        default: None,
+                    });
                 }
             }
         }
@@ -624,8 +619,85 @@ impl RustParser {
     }
 }
 
+/// The item's own generic list: the `<…>` directly after its name (`fn f<…>`,
+/// `struct S<…>`) or at the start (`impl<…>`), matched by depth so nested
+/// generics and `Fn() -> T` bounds stay inside. A `<` later in the signature
+/// belongs to a type, not to the item.
+fn own_generic_list(text: &str) -> Option<&str> {
+    let b = text.as_bytes();
+    let start = b.iter().position(|c| !(c.is_ascii_alphanumeric() || *c == b'_'))?;
+    if b[start] != b'<' {
+        return None;
+    }
+    let mut depth = 0usize;
+    for i in start..b.len() {
+        match b[i] {
+            b'<' => depth += 1,
+            b'>' if i > 0 && b[i - 1] == b'-' => {} // the arrow of `Fn() -> T`
+            b'>' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&text[start + 1..i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None // the list continues on a later line
+}
+
+/// Split at commas that are not inside `<…>`, `(…)` or `[…]`.
+fn split_top_level(s: &str) -> Vec<&str> {
+    let (mut out, mut depth, mut from) = (Vec::new(), 0i32, 0);
+    let b = s.as_bytes();
+    for (i, c) in b.iter().enumerate() {
+        match c {
+            b'<' | b'(' | b'[' => depth += 1,
+            b'>' if i > 0 && b[i - 1] == b'-' => {}
+            b'>' | b')' | b']' => depth -= 1,
+            b',' if depth == 0 => {
+                out.push(&s[from..i]);
+                from = i + 1;
+            }
+            _ => {}
+        }
+    }
+    out.push(&s[from..]);
+    out
+}
+
 #[cfg(test)]
 mod tests {
+
+    fn generic_names(source: &str) -> Vec<(String, Vec<String>)> {
+        let nodes = RustParser::new().unwrap().parse_file(Path::new("lib.rs"), source).unwrap();
+        nodes.iter().filter_map(|n| match n {
+            AstNode::Function(f) => Some((f.name.clone(), f.generics.iter().map(|g| g.name.clone()).collect())),
+            AstNode::Struct(s) => Some((s.name.clone(), s.generics.iter().map(|g| g.name.clone()).collect())),
+            _ => None,
+        }).collect()
+    }
+
+    /// pgRDF: a return type opening `<` on one line and closing on the next
+    /// (`-> TableIterator<`), whose only `>` is the arrow's, used to panic.
+    #[test]
+    fn return_type_continuing_on_the_next_line_does_not_panic() {
+        let found = generic_names("pub fn graph_inventory() -> TableIterator<\n    'static,\n    (name!(g, i64),),\n> {\n}\n");
+        assert_eq!(found, vec![("graph_inventory".to_string(), vec![])]);
+    }
+
+    /// Generics are the item's own list right after its name, never the
+    /// parameters of a type in its signature.
+    #[test]
+    fn generics_are_the_items_own_list_only() {
+        let found = generic_names("fn pick<T: Clone, 'a>(x: &'a T) -> Vec<Option<U>> {}\nfn plain(x: Vec<u8>) -> HashMap<K, V> {}\nstruct Wrapper<T, F: Fn(u8) -> T> { f: F }\n");
+        assert_eq!(found, vec![
+            ("pick".to_string(), vec!["T".to_string(), "'a".to_string()]),
+            ("plain".to_string(), vec![]),
+            ("Wrapper".to_string(), vec!["T".to_string(), "F".to_string()]),
+        ]);
+    }
+
     use super::*;
     use std::path::PathBuf;
 
