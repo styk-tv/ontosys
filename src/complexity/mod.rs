@@ -6,8 +6,10 @@
 //! says which node kinds are decisions, loops, branches and calls.
 
 pub mod engine;
+pub mod join;
 pub mod profiles;
 pub mod rdf;
+pub mod scan;
 
 use engine::Profile;
 

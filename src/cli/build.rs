@@ -10,6 +10,7 @@ use crate::graph::GraphBuilder;
 use crate::graph::docs_builder::DocsBuilder;
 use crate::ontology::TripleSet;
 use crate::grounding::vocab;
+use crate::complexity;
 use crate::lang_c::{self, CFile};
 use std::path::Path;
 use std::fs;
@@ -219,6 +220,32 @@ pub async fn run(
 
     let mut triples = builder.build_from_ast(&all_ast_nodes)?;
 
+    // Tier A for the line-parsed languages: a tree-sitter scan of each file,
+    // attached to its declarations by the line of each function's name.
+    let scanned: Vec<(String, (Vec<complexity::scan::FunctionFacts>, usize), complexity::Grammar)> = files
+        .par_iter()
+        .filter_map(|path| {
+            let rel = path.strip_prefix(&git_root).unwrap_or(path).to_string_lossy().replace('\\', "/");
+            let grammar = complexity::Grammar::for_path(&rel).filter(|g| *g != complexity::Grammar::C)?;
+            let bytes = fs::read(path).ok()?;
+            let scan = complexity::scan::scan_file(&rel, &bytes, grammar);
+            Some((rel, scan, grammar))
+        })
+        .collect();
+    let mut per_file = std::collections::BTreeMap::new();
+    let mut scan_errors: std::collections::BTreeMap<complexity::Grammar, usize> = std::collections::BTreeMap::new();
+    for (rel, (facts, errors), grammar) in scanned {
+        *scan_errors.entry(grammar).or_default() += errors;
+        per_file.insert(rel, facts);
+    }
+    let (attached, mut tier_a_stats) = complexity::join::attach(&triples, &per_file);
+    for (grammar, errors) in scan_errors {
+        tier_a_stats.entry(grammar).or_default().error_nodes += errors;
+    }
+    for (iri, facts) in &attached {
+        complexity::rdf::tier_a_triples(iri, &facts.tier_a, facts.definition_sha256.as_deref(), &mut triples);
+    }
+
     if !c_files.is_empty() {
         let ix = lang_c::rdf::index(project_id, &c_files);
         lang_c::rdf::to_triples(project_id, &c_files, &ix, &mut triples);
@@ -378,6 +405,17 @@ pub async fn run(
         c_parse_error_nodes: c_errors,
         complexity: ComplexityMeta {
             hash_skipped_invalid_utf8: c_files.iter().filter(|f| f.hash_skipped).count(),
+            tier_a: {
+                let mut m: std::collections::BTreeMap<&'static str, complexity::join::AttachStats> =
+                    tier_a_stats.into_iter().map(|(g, st)| (g.name(), st)).collect();
+                if !c_files.is_empty() {
+                    m.insert(
+                        complexity::Grammar::C.name(),
+                        complexity::join::AttachStats { analysed: c_functions, attached: c_functions, error_nodes: c_errors, ..Default::default() },
+                    );
+                }
+                m
+            },
         },
         prepass: (!c_files.is_empty()).then(|| PrepassMeta {
             loop_macros: macro_lists.loop_macros.iter().cloned().collect(),
@@ -598,6 +636,8 @@ struct BuildMetadata {
 struct ComplexityMeta {
     /// C files parsed from a lossy UTF-8 decode, whose functions carry no definition hash.
     hash_skipped_invalid_utf8: usize,
+    /// Per grammar: functions analysed, attached to a declaration, and why not.
+    tier_a: std::collections::BTreeMap<&'static str, complexity::join::AttachStats>,
 }
 
 /// The ontosys commit this binary was built from, and whether its tree was dirty.
