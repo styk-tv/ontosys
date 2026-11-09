@@ -141,6 +141,26 @@ mod tests {
     }
 
     #[test]
+    fn js_logical_assignments_are_decisions() {
+        let a = tier_a(Grammar::JavaScript, "function f(e, r) { e.kind ||= r.kind; e.at ??= r.at; e.ok &&= r.ok; e.n += 1; }", "f");
+        assert_eq!(a.cyclomatic, 4);
+    }
+
+    #[test]
+    fn match_guards_are_decisions() {
+        let a = tier_a(Grammar::Rust, "fn f(c: u8, n: usize) -> u8 { match c { b'%' if n > 2 => 1, b'+' => 2, _ => 3 } }", "f");
+        assert_eq!(a.cyclomatic, 4, "two arms past the first, plus one guard");
+        let p = tier_a(Grammar::Python, "def f(x):\n    match x:\n        case [a] if a > 0:\n            return 1\n        case _:\n            return 0\n", "f");
+        assert_eq!(p.cyclomatic, 3, "one non-wildcard case, plus one guard");
+    }
+
+    #[test]
+    fn rust_let_else_is_a_decision() {
+        let a = tier_a(Grammar::Rust, "fn f(o: Option<u8>) -> u8 { let Some(x) = o else { return 0; }; x }", "f");
+        assert_eq!(a.cyclomatic, 2);
+    }
+
+    #[test]
     fn rust_question_mark_is_a_conditional_exit() {
         let a = tier_a(
             Grammar::Rust,

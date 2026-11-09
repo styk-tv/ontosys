@@ -42,6 +42,10 @@ impl Profile for RustProfile {
                 arms.saturating_sub(1)
             }
             "binary_expression" if logical_op(n, src).is_some() => 1,
+            // a match arm's guard: `pat if cond =>`
+            "match_pattern" if n.child_by_field_name("condition").is_some() => 1,
+            // `let PATTERN = e else { … };` branches like `if let … else`
+            "let_declaration" if n.child_by_field_name("alternative").is_some() => 1,
             _ => 0,
         }
     }

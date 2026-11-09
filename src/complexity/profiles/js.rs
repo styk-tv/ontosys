@@ -39,6 +39,12 @@ impl Profile for JsProfile {
             | "do_statement" | "catch_clause" | "ternary_expression" => 1,
             "switch_case" if n.child_by_field_name("value").is_some() => 1,
             "binary_expression" if logical_op(n, src).is_some() => 1,
+            // `a ||= b`, `a &&= b`, `a ??= b` short-circuit like their operators
+            "augmented_assignment_expression"
+                if n.child_by_field_name("operator").is_some_and(|o| matches!(text(o, src), "||=" | "&&=" | "??=")) =>
+            {
+                1
+            }
             _ => 0,
         }
     }
