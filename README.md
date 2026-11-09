@@ -6,6 +6,8 @@ A multi-language code knowledge graph system that extracts semantic information 
 
 - **Multi-Language Support**: C (tree-sitter syntax trees), Rust, Python, TypeScript, JavaScript, plus a Markdown docs layer
 - **Generic C**: macros that defeat a syntax tree (loop headers, annotations) are derived from the scanned tree's own `#define`s — no project-specific code, any repository or any carved-out part of one
+- **Function Complexity**: structure (cyclomatic, cognitive, nesting, loops), call-graph relationships, sound growth estimates (O, Ω) with every unknown counted by its reason, and readings tied to a definition's hash — see [Complexity](#complexity)
+- **Survey**: `ontosys survey` reads every `.ontosys/` folder on a machine into a private ledger and reports progression
 - **Semantic Diff**: `ontosys diff` compares two builds entity by entity, in ontology terms
 - **Deterministic Output**: version-independent IRIs and canonical triple order — identical sources give byte-identical graphs
 - **Formal Ontologies**: Based on CodeOntology with BFO 2020 foundations
@@ -47,6 +49,7 @@ COMMANDS:
     export    Export the graph to a file
     watch     Watch for file changes and rebuild automatically
     diff      Semantic diff of two builds (repositories or graph.nt files)
+    survey    Read every .ontosys/ under some roots into a ledger; report progression
     clean     Clean the .ontosys folder
 
 OPTIONS:
@@ -91,9 +94,15 @@ ontosys stats
 ```
 .ontosys/
 ├── config.json       # Configuration
+├── cost-catalog.ttl  # Optional: this repository's own costs and size caps
+├── claims/
+│   └── complexity.ttl # Optional: readings of functions' growth
 ├── data/
 │   ├── graph.ttl     # RDF in Turtle format
 │   ├── graph.nt      # RDF in N-Triples format
+│   ├── complexity.nt # Call graph, growth estimates, loops, blockers, findings, claims
+│   ├── code.ttl      # The vocabulary (and SHACL shapes) of every code# term
+│   ├── prepass.json  # C: the loop and erased macros derived from the tree
 │   ├── graph.json    # JSON-LD for visualization (an overview above 250k triples)
 │   ├── docs.json     # Comments + markdown docs metadata
 │   ├── inputs.sha256 # sha256sum list of every file the build read
@@ -138,7 +147,79 @@ tree, version and config give the same bytes), `inputs_sha256` (of
 `inputs.sha256`), and `unparsed_by_extension` (files inside the repository
 that no parser read, so silence is never mistaken for coverage). From the
 repository root, `sha256sum -c .ontosys/data/inputs.sha256` names every input
-that changed since the build.
+that changed since the build. It also names the tool: `ontosys_commit` and
+`ontosys_dirty` (the ontosys build that wrote the folder), `complexity_sha256`
+and `complexity_method`, and a `complexity` summary (per language: functions
+analysed and attached; functions by estimate basis, by reason an upper bound
+is missing and by assumption; loops by bound class; findings; claims; and the
+unlock list).
+
+## Complexity
+
+ontosys keeps facts about a function apart from estimates about it. All terms
+are in `https://ontosys.io/ns/code#` and declared, with SHACL shapes, in
+`ontology/code.ttl` (copied to `.ontosys/data/code.ttl`).
+
+- **Structure (graph.nt)**, per function: `code:statementCount`,
+  `code:cyclomatic` (1 + decision points), `code:cognitive`,
+  `code:maxNesting`, `code:loopCount`, `code:maxLoopNesting`,
+  `code:selfCalls` and `code:definitionSha256` (the definition's bytes as they
+  are in the file, from its first decorator or attribute). One engine walks
+  any tree-sitter function body; a profile per grammar (C, Rust, Python,
+  JavaScript, TypeScript, TSX) names its decision points, loops and calls.
+  Named nested functions are their own functions; closures, lambdas and arrow
+  functions count inside the function that contains them. For Rust, Python
+  and JS/TS, the facts attach to the line parsers' declarations by the line
+  of each function's name; what cannot be attached is counted by cause.
+- **Relationships (complexity.nt)**: `code:fanIn`, `code:fanOut`,
+  `code:externalCallCount`, call cycles (`code:CallCycle`), and loop depth
+  through repository calls. C macro calls link to their definitions
+  (`code:resolvesTo`).
+- **Growth (complexity.nt)**, one `code:GrowthEstimate` per function: an
+  upper class (O(1) … O(n^k), O(b^n), rounded up, exact form kept) only when
+  nothing in the body is unknown; a lower class counting only work that runs
+  on every path; the size expressions as written; every assumption the bounds
+  rest on; and, when there is no upper bound, every reason why
+  (`code:blockedBy`: an uncosted, indirect, ambiguous or cyclic call, a
+  blocked callee, a data-dependent or unbounded loop, unstructured flow, or
+  parse errors). Loops, blockers and findings (a linear call in a loop
+  condition, list membership, concatenation or a sort inside a loop, nested
+  loops over one collection, recursion that recomputes) are evidence nodes.
+- **Costs** come from `ontology/cost-catalog.ttl` (worst case first; average
+  and amortized costs are recorded, never used as bounds), from C macro
+  bodies, and from a repository's own `.ontosys/cost-catalog.ttl`, which may
+  add project functions and caps on sizes:
+
+  ```turtle
+  @prefix code: <https://ontosys.io/ns/code#> .
+  [] a code:SizeCap ; code:sizeName "npos" ; code:cappedBy "MAXNUMPOS" .
+  [] a code:CostEntry ; code:language "c" ; code:operation "find_entry" ;
+     code:worstClass code:OLogN ; code:sizeOf "arg1" ; code:source "read 2026-11" .
+  ```
+
+  The build-meta unlock list names which uncatalogued callees keep the most
+  functions without an upper bound, so the most useful entries are obvious.
+- **Claims**: a reading of a function, written to
+  `.ontosys/claims/complexity.ttl` with the `code:definitionSha256` it was made
+  against, is copied into complexity.nt on every build as current while the
+  definition is byte-for-byte unchanged, and stale after.
+
+## Survey
+
+```bash
+ontosys survey ~/code --depth 4            # read every .ontosys/ below ~/code
+ontosys survey --report                    # progression per folder
+ontosys survey --rebuild ~/code/some-repo  # measure HEAD in a temporary clone
+```
+
+`survey` only reads. Each folder gets one snapshot appended to
+`~/.ontosys/survey/ledger.jsonl` (`--ledger` to choose): which ontosys built
+it, from which tree, its digests, functions per language, complexity spreads
+and summary, and its staleness (`stale-tool`, `stale-tree`, `no-meta`,
+`current`). `--report` compares each folder's latest snapshot with the
+previous one made by the same ontosys commit, so a tool change is never read
+as a code change. `--rebuild` builds a repository's HEAD in a temporary clone
+and leaves the owner's tree untouched.
 
 C extraction details:
 
@@ -374,6 +455,7 @@ pub trait CodeEntity: private::Sealed {
 @prefix prov: <http://www.w3.org/ns/prov#> .
 @prefix doap: <http://usefulinc.com/ns/doap#> .
 @prefix cx: <https://ontosys.io/ns/c#> .          # C constructs
+@prefix oc: <https://ontosys.io/ns/code#> .       # complexity (ontology/code.ttl)
 ```
 
 Instance IRIs: `https://ontosys.io/id/<project>/<kind>/<repository path or natural key>`.
