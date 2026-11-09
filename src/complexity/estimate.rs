@@ -903,8 +903,15 @@ impl<'a> Env<'a> {
                 (Some(u), Some(cu)) => upper = upper.max(u.mul(cu)),
                 _ => known = false,
             }
+            // A callee's growth reaches the caller only through what it is
+            // given: called with constants alone, it runs a fixed amount.
+            let callee_lower = if passes_a_size(c) {
+                callee.lower
+            } else {
+                Cost::ONE
+            };
             if let (Some(l), false) = (l, c.conditional) {
-                lower = lower.max(l.mul(callee.lower));
+                lower = lower.max(l.mul(callee_lower));
             }
             e.size_expressions.extend(callee.sizes.iter().cloned());
             e.blockers.extend(callee.blockers.iter().cloned());
@@ -965,6 +972,43 @@ impl<'a> Env<'a> {
         }
         e
     }
+}
+
+/// Whether a call hands its callee anything that may grow: an argument or
+/// receiver naming a value that is not a literal or an ALL_CAPS constant.
+fn passes_a_size(c: &CallSite) -> bool {
+    const FIXED: &[&str] = &[
+        "true",
+        "false",
+        "True",
+        "False",
+        "None",
+        "NULL",
+        "null",
+        "nullptr",
+        "undefined",
+        "sizeof",
+    ];
+    c.args.iter().chain(c.receiver.iter()).any(|a| {
+        let mut code = String::with_capacity(a.len());
+        let mut quote: Option<char> = None;
+        for ch in a.chars() {
+            match quote {
+                Some(q) if ch == q => quote = None,
+                Some(_) => {}
+                None if ch == '"' || ch == '\'' => quote = Some(ch),
+                None => code.push(ch),
+            }
+        }
+        code.split(|ch: char| !(ch.is_alphanumeric() || ch == '_'))
+            .filter(|w| !w.is_empty() && !w.starts_with(|ch: char| ch.is_ascii_digit()))
+            .any(|w| {
+                !FIXED.contains(&w)
+                    && !(w.len() >= 2
+                        && w.chars()
+                            .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '_'))
+            })
+    })
 }
 
 /// A callee's sizes as its caller sees them: its own direct sizes, named
@@ -1880,6 +1924,16 @@ mod tests {
             est["uses_macro"].blockers
         );
         assert_eq!(est["find_entry"].upper, None, "its own body stays derived");
+    }
+
+    /// A callee's lower bound grows with what the caller passes: called
+    /// with constants only, it is Ω(1) in the caller.
+    #[test]
+    fn a_callee_called_with_constants_adds_no_growth_to_the_lower_bound() {
+        let est = c_estimates("int g(int n) { int s = 0; for (int i = 0; i < n; i++) s++; return s; }\nint f(void) { return g(10) + g(MAXN); }\nint h(int n) { return g(n); }\n");
+        assert_eq!(est["g"].lower.class().0, ON);
+        assert_eq!(est["f"].lower.class().0, O1, "g runs to a constant here");
+        assert_eq!(est["h"].lower.class().0, ON);
     }
 
     #[test]
