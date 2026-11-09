@@ -225,19 +225,25 @@ async fn sparql_post(State(s): State<Shared>, Query(p): Params, body: String) ->
     blocking(s, move |l| l.sparql(&q, limit)).await
 }
 
+/// Form decoding, byte by byte: `+` is a space, `%XY` a byte; a `%` not
+/// followed by two hex digits stays as it is. Never slices the text, so a
+/// multibyte character after `%` cannot panic it (the release build aborts
+/// on panic, which would end the explorer).
 fn urlencoding_decode(s: &str) -> String {
     let b = s.as_bytes();
+    let hex = |c: Option<&u8>| c.and_then(|&c| (c as char).to_digit(16)).map(|d| d as u8);
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
         match b[i] {
             b'+' => out.push(b' '),
-            b'%' if i + 2 < b.len() => {
-                if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                    out.push(v);
+            b'%' => match (hex(b.get(i + 1)), hex(b.get(i + 2))) {
+                (Some(h), Some(l)) => {
+                    out.push(h * 16 + l);
                     i += 2;
                 }
-            }
+                _ => out.push(b'%'),
+            },
             c => out.push(c),
         }
         i += 1;
@@ -450,6 +456,27 @@ mod tests {
         let (s, v) = get(&format!("/api/sparql?query={}", enc("SELEC nope"))).await;
         assert_eq!(s, StatusCode::BAD_REQUEST);
         assert!(v["error"].as_str().unwrap().contains("syntax"));
+    }
+
+    /// A form-encoded query is decoded; a malformed one is refused as a bad
+    /// query, never a panic (the release build aborts on panic, which would
+    /// end the whole explorer).
+    #[tokio::test]
+    async fn form_encoded_sparql_posts_decode_and_malformed_ones_do_not_panic() {
+        let form = |body: &'static [u8]| {
+            Request::post("/api/sparql")
+                .header("content-type", "application/x-www-form-urlencoded")
+                .body(Body::from(body))
+                .unwrap()
+        };
+        let (s, _, b) = call(form(b"query=ASK%20%7B%20%3Fs%20%3Fp%20%3Fo%20%7D")).await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(serde_json::from_slice::<Value>(&b).unwrap()["boolean"], true);
+        for bad in [&b"query=%a\xc3\xa9"[..], b"query=%", b"query=%4", b"query=%zz", b"query=%\xc3\xa9x"] {
+            let (s, _, _) = call(form(bad)).await;
+            assert_eq!(s, StatusCode::BAD_REQUEST, "{:?}", String::from_utf8_lossy(bad));
+        }
+        assert_eq!(urlencoding_decode("a+b%41%e2%82%ac"), "a bA€");
     }
 
     #[tokio::test]
