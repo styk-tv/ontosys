@@ -22,13 +22,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Tags name a minor version with two numbers (v0.9 is 0.9.0); a full
+      # three-number tag (v0.9.1) must match exactly.
       - name: Tag must equal Cargo.toml version
         run: |
           tag="${GITHUB_REF_NAME#v}"
           manifest="$(sed -n 's/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)"
-          echo "tag=$tag manifest=$manifest"
-          if [ "$tag" != "$manifest" ]; then
-            echo "::error::tag v$tag does not match Cargo.toml version $manifest — bump one of them"
+          case "$tag" in
+            *.*.*) want="$tag" ;;
+            *.*) want="$tag.0" ;;
+            *) want="$tag" ;;
+          esac
+          echo "tag=$tag means $want; manifest=$manifest"
+          if [ "$want" != "$manifest" ]; then
+            echo "::error::tag v$tag ($want) does not match Cargo.toml version $manifest — bump one of them"
             exit 1
           fi
 

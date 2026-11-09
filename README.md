@@ -369,8 +369,6 @@ reachability outside the store.
     loop macro is classified by its own expanded header; one whose name is
     under five characters cannot be rewritten in place (listed as
     `short_loop_macros` in build-meta), so its uses stay parse errors.
-- The `type_state_demo` and `ingest_repo` examples do not compile (they
-  predate the current module layout).
 
 ## Ontology Mappings
 
