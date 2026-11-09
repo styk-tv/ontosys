@@ -96,6 +96,7 @@ ontosys stats
 │   ├── graph.nt      # RDF in N-Triples format
 │   ├── graph.json    # JSON-LD for visualization (an overview above 250k triples)
 │   ├── docs.json     # Comments + markdown docs metadata
+│   ├── inputs.sha256 # sha256sum list of every file the build read
 │   └── build-meta.json
 ├── cache/            # Parsed AST cache
 ├── exports/          # Exported files
@@ -117,7 +118,9 @@ C is parsed into a real syntax tree with tree-sitter-c. The other languages
 use line-based heuristic extraction of declarations (functions,
 structs/classes, traits, enums, constants, imports, …) — not a full syntax
 tree. Every declaration carries its location: `filePath` relative to the
-repository, start and end line. Python lines inside strings, brackets or
+repository and start line. The end line is written only where the parser
+knows it (C, and multi-line Python module assignments); a line-based parser
+never guesses a one-line span. Python lines inside strings, brackets or
 backslash continuations are never read as declarations; module-level
 assignments follow the rule of Python's own `ast` (each target of `A = B = …`
 and `NAME: T = …`; not tuple, attribute or augmented targets, nor anything
@@ -126,6 +129,16 @@ nested in a block).
 The project is what git considers the repository: files ignored by
 `.gitignore`, `.git/info/exclude` or the global excludes (a virtualenv, build
 output) are not read; hidden but tracked directories such as `.github/` are.
+
+`build-meta.json` names what a build read and wrote: `ontosys_version`,
+`timestamp`, `git_head` and `git_dirty` (HEAD's commit, and whether the
+working tree differed from it, `.ontosys/` excluded), `graph_sha256` (of
+`graph.nt` as written; `graph.nt` is sorted and deterministic, so the same
+tree, version and config give the same bytes), `inputs_sha256` (of
+`inputs.sha256`), and `unparsed_by_extension` (files inside the repository
+that no parser read, so silence is never mistaken for coverage). From the
+repository root, `sha256sum -c .ontosys/data/inputs.sha256` names every input
+that changed since the build.
 
 C extraction details:
 

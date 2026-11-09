@@ -178,7 +178,7 @@ impl RustParser {
             is_unit,
             doc_comment: doc.clone(),
             attributes: attrs.to_vec(),
-            location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+            location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
         })
     }
 
@@ -211,7 +211,7 @@ impl RustParser {
             variants: vec![], // Would need multi-line parsing
             doc_comment: doc.clone(),
             attributes: attrs.to_vec(),
-            location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+            location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
         })
     }
 
@@ -270,7 +270,7 @@ impl RustParser {
             is_auto: false,
             doc_comment: doc.clone(),
             attributes: attrs.to_vec(),
-            location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+            location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
         })
     }
 
@@ -353,7 +353,7 @@ impl RustParser {
             body_calls: vec![], // Would need body parsing
             doc_comment: doc.clone(),
             attributes: attrs.to_vec(),
-            location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+            location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
         })
     }
 
@@ -383,7 +383,7 @@ impl RustParser {
             alias,
             is_glob,
             visibility: vis,
-            location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+            location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
         })
     }
 
@@ -408,7 +408,7 @@ impl RustParser {
             is_inline,
             items: vec![],
             doc_comment: doc.clone(),
-            location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+            location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
         })
     }
 
@@ -447,7 +447,7 @@ impl RustParser {
             value: None,
             is_variable: false,
             doc_comment: doc.clone(),
-            location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+            location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
         })
     }
 
@@ -488,7 +488,7 @@ impl RustParser {
             items: vec![],
             is_unsafe,
             is_negative: after_impl.contains("!"),
-            location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+            location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
         })
     }
 

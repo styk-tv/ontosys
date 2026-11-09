@@ -11,7 +11,9 @@ pub struct SourceLocation {
     pub file: PathBuf,
     pub start_line: usize,
     pub start_column: usize,
-    pub end_line: usize,
+    /// `None` when the parser does not know where the declaration ends
+    /// (the line-based parsers); the graph then states no end at all.
+    pub end_line: Option<usize>,
     pub end_column: usize,
 }
 
@@ -21,7 +23,18 @@ impl SourceLocation {
             file: file.into(),
             start_line,
             start_column,
-            end_line,
+            end_line: Some(end_line),
+            end_column,
+        }
+    }
+
+    /// A declaration whose start is known and whose end is not.
+    pub fn start_only(file: impl Into<PathBuf>, start_line: usize, start_column: usize, end_column: usize) -> Self {
+        Self {
+            file: file.into(),
+            start_line,
+            start_column,
+            end_line: None,
             end_column,
         }
     }

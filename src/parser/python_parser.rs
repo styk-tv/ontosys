@@ -137,7 +137,7 @@ impl PythonParser {
                 alias,
                 is_glob: false,
                 visibility: Visibility::Private,
-                location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+                location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
             });
         }
 
@@ -160,7 +160,7 @@ impl PythonParser {
                     alias: None,
                     is_glob,
                     visibility: Visibility::Private,
-                    location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+                    location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
                 });
             }
         }
@@ -217,7 +217,7 @@ impl PythonParser {
             is_unit: false,
             doc_comment: doc.clone(),
             attributes: decorators.to_vec(),
-            location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+            location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
         })
     }
 
@@ -290,7 +290,7 @@ impl PythonParser {
             body_calls: vec![],
             doc_comment: doc.clone(),
             attributes: decorators.to_vec(),
-            location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+            location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
         })
     }
 

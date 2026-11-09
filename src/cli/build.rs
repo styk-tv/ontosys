@@ -44,6 +44,9 @@ pub async fn run(
         &fs::read_to_string(ontosys_path.join("config.json"))?
     )?;
 
+    // Which tree this build reads, taken before reading it.
+    let (git_head, git_dirty) = git_state(&git_root);
+
     // Determine which languages to process
     let target_languages: Vec<Language> = match languages {
         Some(langs) => langs.iter()
@@ -152,6 +155,16 @@ pub async fn run(
     let parsed_count = success_count.load(Ordering::Relaxed);
     let errors = error_count.load(Ordering::Relaxed);
 
+    // Every file this build reads, and every file it passes over by extension.
+    let md_files = if config.extract_docs { discover_markdown_files(&git_root)? } else { Vec::new() };
+    let read_inputs: Vec<std::path::PathBuf> = files.iter().chain(&c_paths).chain(&md_files).cloned().collect();
+    let inputs_manifest_text = inputs_manifest(&git_root, &read_inputs)?;
+    let read_extensions: std::collections::HashSet<&str> =
+        target_languages.iter().flat_map(|l| l.extensions()).copied().collect();
+    let unparsed = unparsed_by_extension(&git_root, |ext| {
+        read_extensions.contains(ext) || (config.extract_docs && ext.eq_ignore_ascii_case("md"))
+    });
+
     println!("  {} Parsed: {} files", style("✓").green(), parsed_count + c_files.len());
     let c_functions: usize = c_files.iter().map(|f| f.functions.len()).sum();
     let c_errors: usize = c_files.iter().map(|f| f.parse_errors).sum();
@@ -242,6 +255,15 @@ pub async fn run(
         style("→").dim(),
         fs::metadata(&nt_path)?.len()
     );
+    let graph_sha256 = sha256_hex(nt_text.as_bytes());
+
+    // `sha256sum -c .ontosys/data/inputs.sha256` from the repository root names
+    // every input that changed since this build.
+    fs::write(data_path.join("inputs.sha256"), &inputs_manifest_text)?;
+    println!("  {} inputs.sha256 ({} files)",
+        style("→").dim(),
+        inputs_manifest_text.lines().count()
+    );
 
     // Save as JSON-LD (for visualization). The browser view cannot usefully
     // render millions of edges, so very large graphs skip it rather than ship a
@@ -305,8 +327,7 @@ pub async fn run(
             }
         }
 
-        // Discover and parse markdown files
-        let md_files = discover_markdown_files(&git_root)?;
+        // Parse the markdown files discovered with the other inputs
         for md_path in &md_files {
             if let Ok(source) = fs::read_to_string(md_path) {
                 let relative_path = md_path.strip_prefix(&git_root)
@@ -345,6 +366,8 @@ pub async fn run(
         ontosys_version: env!("CARGO_PKG_VERSION"),
         redact_emails: config.redact_emails,
         timestamp: chrono::Utc::now().to_rfc3339(),
+        git_head,
+        git_dirty,
         project: project_id.to_string(),
         c_files: c_files.len(),
         c_functions,
@@ -353,7 +376,10 @@ pub async fn run(
         files_processed: parsed_count,
         files_failed: errors,
         triples_generated: triples.len(),
+        graph_sha256,
+        inputs_sha256: sha256_hex(inputs_manifest_text.as_bytes()),
         languages: target_languages.iter().map(|l| l.name().to_string()).collect(),
+        unparsed_by_extension: unparsed,
         docs_extracted: docs_extracted_fields.0,
         doc_comments_count: docs_extracted_fields.1,
         regular_comments_count: docs_extracted_fields.2,
@@ -397,6 +423,14 @@ fn discover_markdown_files(root: &Path) -> anyhow::Result<Vec<std::path::PathBuf
 /// tracked directories such as `.github/` are kept. Dependency and output
 /// directories are skipped even where nothing ignores them.
 fn walk_sources(root: &Path, keep: impl Fn(&str) -> bool) -> Vec<std::path::PathBuf> {
+    walk_files(root)
+        .into_iter()
+        .filter(|p| p.extension().and_then(|x| x.to_str()).map_or(false, &keep))
+        .collect()
+}
+
+/// Every file inside the repository boundary (see `walk_sources`), sorted.
+fn walk_files(root: &Path) -> Vec<std::path::PathBuf> {
     const SKIP_DIRS: &[&str] = &["node_modules", "target", "__pycache__", "venv", ".venv", "dist", "build", ".git", ".ontosys"];
     let mut files: Vec<std::path::PathBuf> = ignore::WalkBuilder::new(root)
         .hidden(false)
@@ -404,11 +438,74 @@ fn walk_sources(root: &Path, keep: impl Fn(&str) -> bool) -> Vec<std::path::Path
         .build()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().map_or(false, |t| t.is_file()))
-        .filter(|e| e.path().extension().and_then(|x| x.to_str()).map_or(false, &keep))
         .map(|e| e.into_path())
         .collect();
     files.sort();
     files
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes).iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+/// `sha256sum` lines (`<hex>  <repo-relative path>`) for `files`, sorted by
+/// path. A file that cannot be read fails the build rather than being left
+/// out of the record of what was read.
+fn inputs_manifest(root: &Path, files: &[std::path::PathBuf]) -> anyhow::Result<String> {
+    let mut lines = files
+        .iter()
+        .map(|p| {
+            let rel = p.strip_prefix(root).unwrap_or(p).to_string_lossy().replace('\\', "/");
+            let bytes = fs::read(p).map_err(|e| anyhow::anyhow!("cannot read input {}: {}", rel, e))?;
+            Ok((rel, sha256_hex(&bytes)))
+        })
+        .collect::<anyhow::Result<Vec<(String, String)>>>()?;
+    lines.sort();
+    lines.dedup();
+    Ok(lines.into_iter().map(|(rel, hex)| format!("{}  {}\n", hex, rel)).collect())
+}
+
+/// Files inside the repository boundary that the build does not read, counted
+/// by lower-cased extension (`(none)` for files without one).
+fn unparsed_by_extension(root: &Path, reads: impl Fn(&str) -> bool) -> std::collections::BTreeMap<String, usize> {
+    let mut counts = std::collections::BTreeMap::new();
+    for path in walk_files(root) {
+        let key = match path.extension().and_then(|e| e.to_str()) {
+            Some(ext) if reads(ext) => continue,
+            Some(ext) => format!(".{}", ext.to_lowercase()),
+            None => "(none)".to_string(),
+        };
+        *counts.entry(key).or_insert(0) += 1;
+    }
+    counts
+}
+
+/// HEAD's commit and whether the working tree differs from it (tracked
+/// changes or untracked, unignored files; `.ontosys/` excluded). `(None, None)`
+/// when `root` is not the top of a git repository with a commit.
+fn git_state(root: &Path) -> (Option<String>, Option<bool>) {
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .arg("--no-optional-locks")
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    };
+    // Only `root`'s own repository counts, never one that merely contains it.
+    if git(&["rev-parse", "--show-cdup"]).as_deref() != Some("") {
+        return (None, None);
+    }
+    let Some(head) = git(&["rev-parse", "--verify", "-q", "HEAD"]) else {
+        return (None, None);
+    };
+    let dirty = git(&["status", "--porcelain", "--untracked-files=normal", "--", ".", ":(exclude).ontosys"])
+        .map(|out| !out.is_empty());
+    (Some(head), dirty)
 }
 
 fn process_file(
@@ -457,6 +554,12 @@ struct BuildMetadata {
     ontosys_version: &'static str,
     redact_emails: bool,
     timestamp: String,
+    /// HEAD's commit when the build started; absent outside a git repository.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    git_head: Option<String>,
+    /// Whether the working tree differed from HEAD (`.ontosys/` excluded).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    git_dirty: Option<bool>,
     project: String,
     c_files: usize,
     c_functions: usize,
@@ -466,7 +569,13 @@ struct BuildMetadata {
     files_processed: usize,
     files_failed: usize,
     triples_generated: usize,
+    /// sha256 of graph.nt's bytes as written.
+    graph_sha256: String,
+    /// sha256 of inputs.sha256's bytes (every file this build read).
+    inputs_sha256: String,
     languages: Vec<String>,
+    /// Files inside the repository boundary this build did not read, by extension.
+    unparsed_by_extension: std::collections::BTreeMap<String, usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     docs_extracted: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -683,5 +792,76 @@ mod tests {
         };
         assert_eq!(rel(discover_files(root, &[Language::Python], &[]).unwrap()), vec![".github/scripts/ci.py", "src/app.py"]);
         assert_eq!(rel(discover_markdown_files(root).unwrap()), vec!["README.md"]);
+    }
+
+    #[test]
+    fn sha256_hex_matches_the_standard_vector() {
+        assert_eq!(sha256_hex(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    }
+
+    /// The inputs manifest is `sha256sum` format sorted by repo-relative path,
+    /// so `sha256sum -c .ontosys/data/inputs.sha256` from the repository root
+    /// names every input that changed since the build.
+    #[test]
+    fn inputs_manifest_is_sha256sum_format_sorted_by_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("b")).unwrap();
+        std::fs::write(root.join("b/x.py"), "x = 1\n").unwrap();
+        std::fs::write(root.join("a.py"), "").unwrap();
+        let manifest = inputs_manifest(root, &[root.join("b/x.py"), root.join("a.py")]).unwrap();
+        assert_eq!(manifest, concat!(
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  a.py\n",
+            "9e26bf369911c45c243c684147b23fc9e1dcfcf257d299a1c632016a6fcd33f4  b/x.py\n",
+        ));
+    }
+
+    /// Files the build does not read are counted per extension, so silence is
+    /// never read as coverage (a consumer's report, 2026-10-07). The repository
+    /// boundary is the same as discovery's.
+    #[test]
+    fn unparsed_files_are_counted_per_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir(root.join(".git")).unwrap();
+        std::fs::write(root.join(".gitignore"), ".venv-agent/\n").unwrap();
+        for f in ["src/app.py", "run.sh", "deploy/main.tf", "deploy/vars.tf", "Makefile", ".venv-agent/tool.sh", ".ontosys/data/graph.nt"] {
+            let p = root.join(f);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, "x\n").unwrap();
+        }
+        let counts = unparsed_by_extension(root, |ext| ext == "py");
+        let expected: std::collections::BTreeMap<String, usize> =
+            [(".sh", 1), (".tf", 2), ("(none)", 2)].into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+        assert_eq!(counts, expected, ".gitignore and Makefile have no extension; ignored and .ontosys files are not counted");
+    }
+
+    /// The build names the tree it read: HEAD's commit, and whether the
+    /// working tree differed from it. `.ontosys/` is output, never input.
+    #[test]
+    fn git_state_names_head_and_whether_the_tree_differs() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        assert_eq!(git_state(root), (None, None), "not a repository");
+        let git = |args: &[&str]| -> String {
+            let out = std::process::Command::new("git").arg("-C").arg(root)
+                .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false"])
+                .args(args).output().unwrap();
+            assert!(out.status.success(), "git {:?}: {}", args, String::from_utf8_lossy(&out.stderr));
+            String::from_utf8(out.stdout).unwrap()
+        };
+        git(&["init", "-q"]);
+        std::fs::write(root.join("app.py"), "x = 1\n").unwrap();
+        git(&["add", "app.py"]);
+        git(&["commit", "-q", "--no-verify", "-m", "one"]);
+        let head = git(&["rev-parse", "HEAD"]).trim().to_string();
+        std::fs::create_dir_all(root.join(".ontosys/data")).unwrap();
+        std::fs::write(root.join(".ontosys/data/graph.nt"), "").unwrap();
+        assert_eq!(git_state(root), (Some(head.clone()), Some(false)), ".ontosys/ does not make the tree differ");
+        std::fs::write(root.join("new.py"), "y = 1\n").unwrap();
+        assert_eq!(git_state(root), (Some(head.clone()), Some(true)), "an untracked file the build would read");
+        std::fs::remove_file(root.join("new.py")).unwrap();
+        std::fs::write(root.join("app.py"), "x = 2\n").unwrap();
+        assert_eq!(git_state(root), (Some(head), Some(true)), "a modified tracked file");
     }
 }

@@ -180,7 +180,7 @@ impl TypeScriptParser {
             alias,
             is_glob,
             visibility: Visibility::Private,
-            location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+            location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
         })
     }
 
@@ -228,7 +228,7 @@ impl TypeScriptParser {
             is_auto: false,
             doc_comment: doc.clone(),
             attributes: vec![],
-            location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+            location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
         })
     }
 
@@ -261,7 +261,7 @@ impl TypeScriptParser {
             generics,
             aliased_type,
             doc_comment: doc.clone(),
-            location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+            location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
         })
     }
 
@@ -308,7 +308,7 @@ impl TypeScriptParser {
             is_unit: false,
             doc_comment: doc.clone(),
             attributes: attrs,
-            location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+            location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
         })
     }
 
@@ -379,7 +379,7 @@ impl TypeScriptParser {
             body_calls: vec![],
             doc_comment: doc.clone(),
             attributes: decorators.to_vec(),
-            location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+            location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
         })
     }
 
@@ -426,7 +426,7 @@ impl TypeScriptParser {
             value: None,
             is_variable: false,
             doc_comment: doc.clone(),
-            location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+            location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
         })
     }
 
@@ -462,7 +462,7 @@ impl TypeScriptParser {
             variants: vec![],
             doc_comment: doc.clone(),
             attributes: attrs,
-            location: Some(SourceLocation::new(path, line_num + 1, 0, line_num + 1, line.len())),
+            location: Some(SourceLocation::start_only(path, line_num + 1, 0, line.len())),
         })
     }
 

@@ -986,11 +986,13 @@ impl GraphBuilder {
             Literal::integer(loc.start_line as i64),
         ));
 
-        self.triples.add(Triple::new(
-            subject.clone(),
-            metadata::end_line(),
-            Literal::integer(loc.end_line as i64),
-        ));
+        if let Some(end_line) = loc.end_line {
+            self.triples.add(Triple::new(
+                subject.clone(),
+                metadata::end_line(),
+                Literal::integer(end_line as i64),
+            ));
+        }
 
         self.triples.add(Triple::new(
             subject.clone(),
@@ -1071,6 +1073,28 @@ mod tests {
         assert!(facts("logger").iter().any(|x| x.starts_with("type") && x.ends_with("Variable>")), "a non-constant module binding is a Variable");
         let import_has_path = triples.iter().filter(|t| t.subject.to_string().contains("import")).any(|t| t.predicate.as_str().ends_with("filePath"));
         assert!(import_has_path, "imports carry their file");
+    }
+
+    /// Rust, Python and TypeScript are parsed line by line, so where a
+    /// declaration ends is usually unknown. An unknown end is left out rather
+    /// than written as a one-line span (a consumer's measurement, 2026-11-07: 0 of 466 Rust
+    /// declarations had endLine > startLine). A known end is kept.
+    #[test]
+    fn unknown_ends_are_omitted_and_known_ends_kept() {
+        let parser = crate::parser::MultiLanguageParser::new().unwrap();
+        let mut nodes = parser.parse_file(std::path::Path::new("src/lib.rs"), "pub fn run() {\n    work();\n}\n").unwrap();
+        nodes.extend(parser.parse_file(std::path::Path::new("pkg/conf.py"), "TABLE = {\n    'a': 1,\n}\n").unwrap());
+        let triples = GraphBuilder::new("p").build_from_ast(&nodes).unwrap();
+        let values = |label: &str, predicate: &str| -> Vec<String> {
+            let subject = triples.iter().find(|t| t.predicate.as_str().ends_with("rdf-schema#label") && t.object.to_string().contains(&format!("\"{}\"", label)))
+                .unwrap_or_else(|| panic!("no node labelled {}", label)).subject.clone();
+            triples.iter().filter(|t| t.subject == subject && t.predicate.as_str().ends_with(predicate)).map(|t| t.object.to_string()).collect()
+        };
+        assert_eq!(values("run", "/startLine").len(), 1, "the start is known");
+        assert_eq!(values("run", "/endLine"), Vec::<String>::new(), "a line-based parser does not know where run ends");
+        let table_end = values("TABLE", "/endLine");
+        assert_eq!(table_end.len(), 1, "a multi-line module assignment knows its end: {:?}", table_end);
+        assert!(table_end[0].starts_with("\"3\""), "{:?}", table_end);
     }
 
     fn func_at(name: &str, file: &str, line: usize) -> AstNode {
