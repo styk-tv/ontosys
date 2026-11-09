@@ -43,14 +43,23 @@ pub fn derive_macros(files: &[(String, String)]) -> MacroLists {
             defs.entry(name).or_default().push((is_fn, body));
         }
     }
-    let mut out = MacroLists { defined: defs.keys().cloned().collect(), ..Default::default() };
+    let mut out = MacroLists {
+        defined: defs.keys().cloned().collect(),
+        ..Default::default()
+    };
     loop {
         let mut changed = false;
         for (name, ds) in &defs {
-            if out.erased.contains(name) || out.loop_macros.contains(name) || C_KEYWORDS.contains(&name.as_str()) {
+            if out.erased.contains(name)
+                || out.loop_macros.contains(name)
+                || C_KEYWORDS.contains(&name.as_str())
+            {
                 continue;
             }
-            let kinds: BTreeSet<Kind> = ds.iter().map(|(is_fn, body)| kind_of(body, *is_fn, &out)).collect();
+            let kinds: BTreeSet<Kind> = ds
+                .iter()
+                .map(|(is_fn, body)| kind_of(body, *is_fn, &out))
+                .collect();
             if kinds.len() != 1 {
                 continue;
             }
@@ -80,8 +89,12 @@ fn defines(text: &str) -> Vec<(String, bool, String)> {
     let mut lines = text.lines();
     while let Some(first) = lines.next() {
         let t = first.trim_start();
-        let Some(rest) = t.strip_prefix('#') else { continue };
-        let Some(rest) = rest.trim_start().strip_prefix("define") else { continue };
+        let Some(rest) = t.strip_prefix('#') else {
+            continue;
+        };
+        let Some(rest) = rest.trim_start().strip_prefix("define") else {
+            continue;
+        };
         if !rest.starts_with([' ', '\t']) {
             continue;
         }
@@ -178,7 +191,9 @@ fn kind_of(body: &str, is_fn: bool, known: &MacroLists) -> Kind {
     if !is_header || !rest.starts_with('(') {
         return Kind::Other;
     }
-    let Some(end) = close_paren(rest.as_bytes(), 0) else { return Kind::Other };
+    let Some(end) = close_paren(rest.as_bytes(), 0) else {
+        return Kind::Other;
+    };
     // Braces count only outside parentheses: a nested `for (T x = {…}; …)`
     // header still leaves the loop open.
     let (mut opens, mut closes, mut depth) = (0usize, 0usize, 0usize);
@@ -200,7 +215,9 @@ fn kind_of(body: &str, is_fn: bool, known: &MacroLists) -> Kind {
 
 /// `(leading identifier, rest)`; the identifier is empty when there is none.
 fn split_ident(s: &str) -> (&str, &str) {
-    let end = s.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(s.len());
+    let end = s
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .unwrap_or(s.len());
     (&s[..end], &s[end..])
 }
 
@@ -208,19 +225,83 @@ fn split_ident(s: &str) -> (&str, &str) {
 /// `#define` one of them for an old compiler (`#define inline`), but erasing
 /// or rewriting it would break every file that uses the keyword.
 const C_KEYWORDS: &[&str] = &[
-    "auto", "break", "case", "char", "const", "continue", "default", "do", "double", "else", "enum",
-    "extern", "float", "for", "goto", "if", "inline", "int", "long", "register", "restrict", "return",
-    "short", "signed", "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned", "void",
-    "volatile", "while", "_Alignas", "_Alignof", "_Atomic", "_Bool", "_Complex", "_Generic",
-    "_Imaginary", "_Noreturn", "_Static_assert", "_Thread_local", "alignas", "alignof", "bool",
-    "constexpr", "false", "nullptr", "static_assert", "thread_local", "true", "typeof",
-    "typeof_unqual", "__inline", "__inline__", "__restrict", "__restrict__", "__volatile__",
-    "__const", "__signed__", "__typeof__", "asm", "__asm__",
+    "auto",
+    "break",
+    "case",
+    "char",
+    "const",
+    "continue",
+    "default",
+    "do",
+    "double",
+    "else",
+    "enum",
+    "extern",
+    "float",
+    "for",
+    "goto",
+    "if",
+    "inline",
+    "int",
+    "long",
+    "register",
+    "restrict",
+    "return",
+    "short",
+    "signed",
+    "sizeof",
+    "static",
+    "struct",
+    "switch",
+    "typedef",
+    "union",
+    "unsigned",
+    "void",
+    "volatile",
+    "while",
+    "_Alignas",
+    "_Alignof",
+    "_Atomic",
+    "_Bool",
+    "_Complex",
+    "_Generic",
+    "_Imaginary",
+    "_Noreturn",
+    "_Static_assert",
+    "_Thread_local",
+    "alignas",
+    "alignof",
+    "bool",
+    "constexpr",
+    "false",
+    "nullptr",
+    "static_assert",
+    "thread_local",
+    "true",
+    "typeof",
+    "typeof_unqual",
+    "__inline",
+    "__inline__",
+    "__restrict",
+    "__restrict__",
+    "__volatile__",
+    "__const",
+    "__signed__",
+    "__typeof__",
+    "asm",
+    "__asm__",
 ];
 
 /// Keywords that only annotate a declaration (no storage class, no type):
 /// a macro expanding to nothing but these erases without losing structure.
-const ANNOTATION_KEYWORDS: &[&str] = &["_Noreturn", "noreturn", "restrict", "__restrict", "__restrict__", "__forceinline"];
+const ANNOTATION_KEYWORDS: &[&str] = &[
+    "_Noreturn",
+    "noreturn",
+    "restrict",
+    "__restrict",
+    "__restrict__",
+    "__forceinline",
+];
 
 /// Empty, or nothing but `__attribute__((…))` / `__declspec(…)` groups,
 /// annotation-only keywords, and invocations of macros already known to erase.
@@ -232,7 +313,9 @@ fn is_attribute_only(body: &str, erased: &BTreeSet<String>) -> bool {
         match word {
             // C23 attribute specifier: `[[nodiscard]]`, `[[maybe_unused, gnu::cold]]`
             "" if s.starts_with("[[") => {
-                let Some(end) = s.find("]]") else { return false };
+                let Some(end) = s.find("]]") else {
+                    return false;
+                };
                 s = s[end + 2..].trim_start();
             }
             w if ANNOTATION_KEYWORDS.contains(&w) => s = rest,
@@ -240,11 +323,17 @@ fn is_attribute_only(body: &str, erased: &BTreeSet<String>) -> bool {
                 if !rest.starts_with('(') {
                     return false;
                 }
-                let Some(end) = close_paren(rest.as_bytes(), 0) else { return false };
+                let Some(end) = close_paren(rest.as_bytes(), 0) else {
+                    return false;
+                };
                 s = rest[end..].trim_start();
             }
             w if !w.is_empty() && erased.contains(w) => {
-                s = match rest.starts_with('(').then(|| close_paren(rest.as_bytes(), 0)).flatten() {
+                s = match rest
+                    .starts_with('(')
+                    .then(|| close_paren(rest.as_bytes(), 0))
+                    .flatten()
+                {
                     Some(end) => rest[end..].trim_start(),
                     None => rest,
                 };
@@ -267,7 +356,10 @@ pub fn prepass(src: &str, lists: &MacroLists) -> String {
     let rewritten = super::erase_macros(&s, &erased, &[]);
     let mut out = String::with_capacity(src.len());
     let mut continuing = false;
-    for (orig, new) in src.split_inclusive('\n').zip(rewritten.split_inclusive('\n')) {
+    for (orig, new) in src
+        .split_inclusive('\n')
+        .zip(rewritten.split_inclusive('\n'))
+    {
         let directive = continuing || orig.trim_start().starts_with('#');
         out.push_str(if directive { orig } else { new });
         continuing = directive && orig.trim_end_matches(['\n', '\r']).ends_with('\\');
@@ -275,7 +367,9 @@ pub fn prepass(src: &str, lists: &MacroLists) -> String {
     out
 }
 
-const KEYWORDS: &[&str] = &["if", "while", "for", "switch", "return", "sizeof", "do", "else", "case", "defined"];
+const KEYWORDS: &[&str] = &[
+    "if", "while", "for", "switch", "return", "sizeof", "do", "else", "case", "defined",
+];
 
 /// Indented lines that are exactly `NAME(args)`, with no `;`, where NAME is
 /// defined nowhere in the scanned files: a macro whose loop or statement the
@@ -285,7 +379,9 @@ pub fn unresolved_macro_statements(src: &str, defined: &BTreeSet<String>) -> usi
         .filter(|line| line.starts_with([' ', '\t']))
         .filter(|line| {
             let t = line.trim();
-            let name_end = t.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(t.len());
+            let name_end = t
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .unwrap_or(t.len());
             if name_end == 0 || !t[name_end..].starts_with('(') {
                 return false;
             }
@@ -315,7 +411,9 @@ mod tests {
 
     #[test]
     fn derives_loop_macro_through_do_brace() {
-        let m = lists("#define each(x) do { for (;;)\n#define SWAP(a,b) do { t=a; a=b; b=t; } while (0)\n");
+        let m = lists(
+            "#define each(x) do { for (;;)\n#define SWAP(a,b) do { t=a; a=b; b=t; } while (0)\n",
+        );
         assert!(m.loop_macros.contains("each"));
         assert!(!m.loop_macros.contains("SWAP"));
     }
@@ -358,9 +456,13 @@ mod tests {
 
     #[test]
     fn c_keywords_are_never_erased_or_rewritten() {
-        let m = lists("#define extern\n#define inline\n#define while(x) for (;;)\n#define static\n");
+        let m =
+            lists("#define extern\n#define inline\n#define while(x) for (;;)\n#define static\n");
         for kw in ["extern", "inline", "while", "static"] {
-            assert!(!m.erased.contains(kw) && !m.loop_macros.contains(kw), "{kw} is C, not a project macro");
+            assert!(
+                !m.erased.contains(kw) && !m.loop_macros.contains(kw),
+                "{kw} is C, not a project macro"
+            );
         }
     }
 
@@ -373,7 +475,10 @@ mod tests {
         assert!(m.erased.contains("NORET"));
         assert!(m.erased.contains("RESTRICT"));
         assert!(m.erased.contains("NODISCARD"));
-        assert!(!m.erased.contains("NOT_THIS"), "storage classes carry structure and stay");
+        assert!(
+            !m.erased.contains("NOT_THIS"),
+            "storage classes carry structure and stay"
+        );
     }
 
     #[test]
@@ -399,7 +504,9 @@ mod tests {
 
     #[test]
     fn prepass_preserves_length_and_lines() {
-        let m = lists("#define foreach(c, l) for (;;)\n#define API\n#define attr(x) __attribute__((x))\n");
+        let m = lists(
+            "#define foreach(c, l) for (;;)\n#define API\n#define attr(x) __attribute__((x))\n",
+        );
         let src = "API int f(List *l) attr(cold);\nint g(void) {\n\tforeach(c, l)\n\t{\n\t\th(c);\n\t}\n}\n";
         let out = prepass(src, &m);
         assert_eq!(out.len(), src.len());

@@ -51,6 +51,7 @@
 //! ```
 
 pub mod capabilities;
+pub mod complexity;
 pub mod graph;
 pub mod grounding;
 pub mod lang_c;
