@@ -5,9 +5,9 @@
 //! Instance IRIs are version-independent and `graph.nt` is written in canonical
 //! (sorted, de-duplicated) order, so two builds compare as a streaming merge of
 //! sorted lines. Differences are grouped by entity and reported in the terms of
-//! the ontology — SQL surface, settings, error conditions, catalogs, node types,
-//! then C functions per code area with the change to their grounded profile —
-//! rather than as text hunks. Positional facts (line numbers) are ignored.
+//! the ontology — types, macros, globals, files, then C functions per directory
+//! with the change to their profile — rather than as text hunks. Positional
+//! facts (line numbers) are ignored.
 
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
@@ -18,37 +18,12 @@ use std::path::{Path, PathBuf};
 const RDF_TYPE: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
 const RDFS_LABEL: &str = "<http://www.w3.org/2000/01/rdf-schema#label>";
 const CX: &str = "https://ontosys.io/ns/c#";
-const PG: &str = "https://ontosys.io/ns/pg#";
 
 /// Facts that move whenever unrelated lines are added above them.
 const POSITIONAL: &[&str] = &["startLine", "endLine", "line", "parseErrors"];
 
 /// Report order: the most specific class an entity has decides its section.
 pub const SECTIONS: &[(&str, &str)] = &[
-    ("pg:Release", "Release"),
-    ("pg:BuiltinFunction", "Built-in SQL functions (pg_proc)"),
-    ("pg:DataType", "Built-in types (pg_type)"),
-    ("pg:Operator", "Operators (pg_operator)"),
-    ("pg:Cast", "Casts (pg_cast)"),
-    ("pg:Aggregate", "Aggregates (pg_aggregate)"),
-    ("pg:AccessMethod", "Access methods (pg_am)"),
-    ("pg:OperatorClass", "Operator classes"),
-    ("pg:OperatorFamily", "Operator families"),
-    ("pg:Collation", "Collations"),
-    ("pg:LanguageEntry", "Languages"),
-    ("pg:CatalogRow", "Other bootstrap catalog rows"),
-    ("pg:ConfigParameter", "Configuration parameters (GUC)"),
-    ("pg:SQLState", "Error conditions (SQLSTATE)"),
-    ("pg:SQLStateClass", "SQLSTATE classes"),
-    ("pg:WaitEvent", "Wait events"),
-    ("pg:LWLock", "LWLocks"),
-    ("pg:LWLockTranche", "LWLock tranches"),
-    ("pg:Keyword", "SQL keywords"),
-    ("pg:SystemCatalog", "System catalogs"),
-    ("pg:CatalogColumn", "Catalog columns"),
-    ("pg:CatalogIndex", "Catalog indexes"),
-    ("pg:NodeType", "Node types (parse / plan / execution trees)"),
-    ("pg:Hook", "Extension hooks"),
     ("cx:Function", "C functions"),
     ("cx:Prototype", "Header prototypes (published C interface)"),
     ("cx:Struct", "Structs"),
@@ -61,7 +36,6 @@ pub const SECTIONS: &[(&str, &str)] = &[
     ("cx:GlobalVariable", "Global variables"),
     ("cx:SourceFile", "Source files"),
     ("cx:HeaderFile", "Header files"),
-    ("pg:CodeArea", "Code areas"),
 ];
 
 /// Sections shown as counts only (bookkeeping, not meaning).
@@ -69,23 +43,8 @@ const COUNT_ONLY: &[&str] = &["cx:ExternalSymbol", "cx:SystemHeader", "owl:Class
 
 /// Profile predicates of a function, with their reading.
 pub const PROFILE: &[(&str, &str)] = &[
-    ("pg:implementsSQLFunction", "implements SQL function"),
     ("rdf:type", "role"),
     ("cx:signature", "signature"),
-    ("pg:mayRaise", "may raise"),
-    ("pg:reportsAtLevel", "reports at level"),
-    ("cx:emitsMessage", "message"),
-    ("cx:emitsDetail", "detail"),
-    ("cx:emitsHint", "hint"),
-    ("cx:emitsContext", "context"),
-    ("pg:readsSetting", "reads setting"),
-    ("pg:createsNode", "creates node"),
-    ("pg:inspectsNode", "inspects node"),
-    ("pg:operatesOn", "operates on node"),
-    ("pg:waitsOn", "waits on"),
-    ("pg:usesLock", "uses lock"),
-    ("pg:usesLockTranche", "uses lock tranche"),
-    ("pg:touchesHook", "touches hook"),
     ("cx:calls", "calls"),
     ("cx:usesType", "uses type"),
     ("rdfs:comment", "comment"),
@@ -98,9 +57,7 @@ pub struct Graph {
     pub types: BTreeMap<String, BTreeSet<String>>,
     pub parent: BTreeMap<String, String>,
     pub defined_in: BTreeMap<String, String>,
-    pub in_area: BTreeMap<String, String>,
     pub body_hash: BTreeMap<String, String>,
-    pub version: Option<String>,
     pub triples: usize,
 }
 
@@ -121,8 +78,6 @@ pub fn compact(iri: &str) -> String {
     let inner = iri.trim_start_matches('<').trim_end_matches('>');
     for (ns, short) in [
         (CX, "cx"),
-        (PG, "pg"),
-        ("https://ontosys.io/ns/pgcat#", "pgcat"),
         ("http://www.w3.org/1999/02/22-rdf-syntax-ns#", "rdf"),
         ("http://www.w3.org/2000/01/rdf-schema#", "rdfs"),
         ("http://www.w3.org/2002/07/owl#", "owl"),
@@ -182,19 +137,15 @@ impl Graph {
                 _ => {
                     let p = compact(l.p);
                     match p.as_str() {
-                        "cx:hasField" | "cx:hasMember" | "pg:hasColumn" | "pg:hasIndex" => {
+                        "cx:hasField" | "cx:hasMember" => {
                             g.parent.insert(l.o.to_string(), l.s.to_string());
                         }
                         "cx:definedIn" => {
                             g.defined_in.insert(l.s.to_string(), l.o.to_string());
                         }
-                        "pg:inArea" => {
-                            g.in_area.insert(l.s.to_string(), l.o.to_string());
-                        }
                         "cx:bodyHash" => {
                             g.body_hash.insert(l.s.to_string(), literal_text(l.o).unwrap_or_default());
                         }
-                        "pg:version" => g.version = literal_text(l.o),
                         _ => {}
                     }
                 }
@@ -228,11 +179,6 @@ impl Graph {
         }
         if o.starts_with('<') {
             let base = self.label(o);
-            // Make SQLSTATEs readable as "condition (code)".
-            if o.contains("/pg/sqlstate/") {
-                let code = o.trim_end_matches('>').rsplit('/').next().unwrap_or("");
-                return format!("{} ({})", base, code);
-            }
             if self.types.contains_key(o) || self.labels.contains_key(o) {
                 return base;
             }
@@ -241,10 +187,12 @@ impl Graph {
         o.to_string()
     }
 
-    /// The area (directory) of an entity: its own, or that of its defining file.
+    /// The area of an entity: the directory of its defining file (or of
+    /// itself, for a file). Any project layout works the same way.
     pub fn area_of(&self, iri: &str) -> Option<String> {
         let file = self.defined_in.get(iri).map(|s| s.as_str()).unwrap_or(iri);
-        self.in_area.get(file).map(|a| self.label(a))
+        let path = self.label(file);
+        path.rsplit_once('/').map(|(dir, _)| dir.to_string()).or_else(|| Some(".".to_string()))
     }
 
     pub fn section(&self, iri: &str) -> &'static str {
@@ -259,9 +207,6 @@ impl Graph {
                 if t.contains(*c) {
                     return c;
                 }
-            }
-            if t.iter().any(|c| c.starts_with("pg:") && c != "pg:CatalogRow") {
-                return "pg:CodeArea";
             }
         }
         "other"
@@ -376,8 +321,7 @@ pub async fn run(old: &Path, new: &Path, out: Option<PathBuf>, json: Option<Path
 
     // ---- report -------------------------------------------------------------
     let mut r = String::new();
-    let va = a.version.clone().unwrap_or_else(|| "old".into());
-    let vb = b.version.clone().unwrap_or_else(|| "new".into());
+    let (va, vb) = ("old", "new");
     writeln!(r, "# Semantic diff: {} → {}\n", va, vb)?;
     writeln!(
         r,
@@ -512,8 +456,7 @@ fn function_section(
     writeln!(r, "|---|---|---:|")?;
     for (k, meaning) in [
         ("contract", "signature or parameters changed"),
-        ("SQL role", "now / no longer implements a SQL function or support role"),
-        ("behaviour", "errors raised, messages, settings read, nodes, locks, waits, hooks"),
+        ("role", "classes it is typed with changed"),
         ("dependencies", "calls or types used changed, observable profile unchanged"),
         ("implementation", "code changed, profile and dependencies unchanged"),
         ("docs", "header comment only"),
@@ -559,17 +502,8 @@ pub fn change_kind(e: &EntityDiff) -> &'static str {
     let has = |p: &str| preds.contains(p);
     if has("cx:signature") || has("cx:parameters") {
         "contract"
-    } else if has("pg:implementsSQLFunction") || has("rdf:type") {
-        "SQL role"
-    } else if preds.iter().any(|p| {
-        matches!(
-            *p,
-            "pg:mayRaise" | "pg:reportsAtLevel" | "cx:emitsMessage" | "cx:emitsDetail" | "cx:emitsHint" | "cx:emitsContext"
-                | "pg:readsSetting" | "pg:createsNode" | "pg:inspectsNode" | "pg:operatesOn" | "pg:waitsOn"
-                | "pg:usesLock" | "pg:usesLockTranche" | "pg:touchesHook"
-        )
-    }) {
-        "behaviour"
+    } else if has("rdf:type") {
+        "role"
     } else if has("cx:calls") || has("cx:usesType") {
         "dependencies"
     } else if has("cx:bodyHash") {
@@ -649,14 +583,6 @@ fn describe(g: &Graph, s: &str) -> String {
     let mut parts = Vec::new();
     if let Some(f) = g.defined_in.get(s) {
         parts.push(format!("in `{}`", g.label(f)));
-    }
-    let types: Vec<String> = g
-        .types
-        .get(s)
-        .map(|t| t.iter().filter(|c| c.starts_with("pg:") && *c != "pg:CatalogRow").cloned().collect())
-        .unwrap_or_default();
-    if !types.is_empty() && g.section(s) == "cx:Function" {
-        parts.push(types.join(", "));
     }
     if parts.is_empty() {
         String::new()

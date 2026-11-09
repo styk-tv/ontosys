@@ -40,7 +40,7 @@ test('real numbers from the full graph are shown', async ({ page }) => {
   await open(page);
   await expect(page.locator('#numbers')).toContainText('125');      // triples
   await expect(page.locator('#numbers')).toContainText('C functions');
-  await expect(page.locator('#subtitle')).toContainText('compared with fix1');
+  await expect(page.locator('#subtitle')).toContainText('compared with baseline');
 });
 
 test('selecting a node does not move anything else, and panel matches ring', async ({ page }) => {
@@ -87,8 +87,10 @@ test('drawn neighbours are never faded in "Changed only" (regression)', async ({
 test('links are coloured by family and named per the link-names toggle', async ({ page }) => {
   await open(page);
   await select(page, CATALOG);
-  const colLink = page.locator(`#graph g.lk[data-s="${CATALOG}"][data-p="pg:hasColumn"]`).first();
-  await expect(colLink).toHaveClass(/fam-structure/);
+  // The fixture's catalog→column links are in a namespace ontosys does not
+  // emit, so they are drawn under their full IRI in the neutral family.
+  const colLink = page.locator(`#graph g.lk[data-s="${CATALOG}"][data-p="https://ontosys.io/ns/pg#hasColumn"]`).first();
+  await expect(colLink).toHaveClass(/fam-other/);
   await expect(colLink).toHaveClass(/\bhl\b/);
   const shown = () => page.evaluate(() => [...document.querySelectorAll('#graph g.lk text.plbl')].filter(t => getComputedStyle(t).display !== 'none').length);
   await page.locator('#plabels [data-v=sel]').click();
@@ -98,7 +100,9 @@ test('links are coloured by family and named per the link-names toggle', async (
   expect(await shown()).toBe(0);
   await page.locator('#plabels [data-v=all]').click();
   expect(await shown()).toBe(await page.locator('#graph g.lk').count());
-  await expect(page.locator('#legend .fams')).toContainText('structure');
+  // the legend lists the families of the links on screen
+  await expect(page.locator('#legend .fams')).toContainText('reference');
+  await expect(page.locator('#legend .fams')).toContainText('other');
 });
 
 test('the view choice is remembered across reloads', async ({ page }) => {
@@ -112,6 +116,6 @@ test('an entity removed since the baseline is searchable and shown from the base
   await open(page);
   await page.locator('#search').fill('f21');
   await page.locator('#results .row[data-iri]').first().click();
-  await expect(page.locator('#detail .card')).toContainText('only in fix1');
+  await expect(page.locator('#detail .card')).toContainText('only in baseline');
   await expect(page.locator('#detail .status.removed')).toHaveCount(1);
 });

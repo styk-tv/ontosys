@@ -24,7 +24,7 @@ fn main() {
     println!("quads {}", store.len().unwrap());
     for q in [
         "SELECT ?c (COUNT(?s) AS ?n) WHERE { ?s a ?c } GROUP BY ?c ORDER BY DESC(?n) LIMIT 5",
-        "PREFIX pg: <https://ontosys.io/ns/pg#> SELECT ?st (COUNT(DISTINCT ?f) AS ?n) WHERE { ?f pg:mayRaise ?st } GROUP BY ?st ORDER BY DESC(?n) LIMIT 5",
+        "PREFIX cx: <https://ontosys.io/ns/c#> SELECT ?callee (COUNT(DISTINCT ?f) AS ?n) WHERE { ?f cx:calls ?callee } GROUP BY ?callee ORDER BY DESC(?n) LIMIT 5",
         "SELECT (COUNT(*) AS ?removed) WHERE { GRAPH <urn:ontosys:baseline> { ?s ?p ?o } MINUS { ?s ?p ?o } }",
     ] {
         let t = Instant::now();

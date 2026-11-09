@@ -14,8 +14,6 @@
 
   const PREFIXES = [
     ['https://ontosys.io/ns/c#', 'cx:'],
-    ['https://ontosys.io/ns/pg#', 'pg:'],
-    ['https://ontosys.io/ns/pgcat#', 'pgcat:'],
     ['http://www.w3.org/2000/01/rdf-schema#', 'rdfs:'],
     ['http://www.w3.org/1999/02/22-rdf-syntax-ns#', 'rdf:'],
     ['http://www.w3.org/2002/07/owl#', 'owl:'],
@@ -29,25 +27,17 @@
   }
 
   const FAMILIES = {
-    structure: ['pg:partOf', 'pg:inArea', 'cx:definedIn', 'cx:declaredIn', 'pg:hasColumn', 'pg:hasIndex',
-      'cx:hasField', 'cx:hasMember', 'pg:inCatalog', 'pg:inClass', 'cx:includes', 'pg:representedBy'],
-    reference: ['cx:calls', 'pg:lookupCatalog', 'cx:declares', 'cx:usesType', 'cx:fieldType',
-      'pg:specializes', 'pg:argumentType'],
-    behaviour: ['pg:mayRaise', 'pg:readsSetting', 'pg:createsNode', 'pg:inspectsNode', 'pg:operatesOn',
-      'pg:waitsOn', 'pg:usesLock', 'pg:usesLockTranche', 'pg:touchesHook', 'pg:boundToVariable',
-      'pg:checkHook', 'pg:assignHook', 'pg:showHook'],
-    sql: ['pg:implementsSQLFunction', 'pg:implementedBy'],
+    structure: ['cx:definedIn', 'cx:declaredIn', 'cx:hasField', 'cx:hasMember', 'cx:includes'],
+    reference: ['cx:calls', 'cx:declares', 'cx:usesType', 'cx:fieldType'],
     type: ['rdf:type', 'rdfs:subClassOf'],
   };
   const FAMILY_OF = new Map();
   for (const [fam, ps] of Object.entries(FAMILIES)) for (const p of ps) FAMILY_OF.set(p, fam);
 
-  /** Colour family of a predicate: structure | reference | behaviour | sql | type | other. */
+  /** Colour family of a predicate: structure | reference | type | other. */
   function family(p) {
     const k = pk(p);
-    if (FAMILY_OF.has(k)) return FAMILY_OF.get(k);
-    if (k.startsWith('pgcat:')) return 'reference';   // catalog rows pointing at catalog rows
-    return 'other';
+    return FAMILY_OF.has(k) ? FAMILY_OF.get(k) : 'other';
   }
 
   /** Draw a predicate's targets as one group node instead of individual spokes? */

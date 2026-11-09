@@ -104,14 +104,8 @@ pub async fn run(repo_path: &Path, port: u16, open_browser: bool, compare: Optio
 fn build_state(current: &Path, baseline: Option<&Path>, overview_above: usize) -> anyhow::Result<AppState> {
     let loaded = Loaded::load(current, baseline)?;
     let classes = json!({ "items": loaded.classes() });
-    // The grounded overview needs grounded entities: any C build declares the
-    // PostgreSQL classes in its vocabulary, but only a PostgreSQL tree has them.
-    let has = |c: &str| classes["items"].as_array().map_or(false, |a| a.iter().any(|x| x["short"] == c));
-    let overview: Vec<String> = if has("pg:SystemCatalog") {
-        crate::grounding::postgres::OVERVIEW_CLASSES.iter().map(|c| format!("pg:{}", c)).collect()
-    } else {
-        Vec::new()
-    };
+    // No project-specific overview: large graphs open on their class map.
+    let overview: Vec<String> = Vec::new();
     // Small graphs are drawn whole; large grounded ones as their grounded
     // overview; anything else as a map of its classes.
     let view = if loaded.triples_current > overview_above && overview.is_empty() {
@@ -128,8 +122,10 @@ fn build_state(current: &Path, baseline: Option<&Path>, overview_above: usize) -
         .unwrap_or(json!({}));
     let info = json!({
         "project": meta.get("project"),
-        "version": loaded.cur().version,
-        "baseline": loaded.base().map(|b| b.version.clone()),
+        // The scanned tree's commit stands in for a release name (generic).
+        "version": meta.get("git_head").and_then(|h| h.as_str()).map(|h| h.chars().take(8).collect::<String>()),
+        // A comparison graph has no name of its own; call it what it is.
+        "baseline": loaded.base().map(|_| "baseline"),
         "triples": loaded.triples_current,
         "baseline_triples": loaded.triples_baseline,
         "skipped_lines": loaded.skipped_lines,
@@ -256,8 +252,6 @@ fn urlencoding_decode(s: &str) -> String {
 const PREFIXES: &str = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX cx: <https://ontosys.io/ns/c#>
-PREFIX pg: <https://ontosys.io/ns/pg#>
-PREFIX pgcat: <https://ontosys.io/ns/pgcat#>
 ";
 
 /// (id, title, what it measures, SPARQL body)
@@ -268,26 +262,10 @@ const AGGREGATES: &[(&str, &str, &str, &str)] = &[
      "SELECT ?predicate (COUNT(*) AS ?triples) WHERE { ?s ?predicate ?o } GROUP BY ?predicate ORDER BY DESC(?triples) LIMIT 40"),
     ("linked", "Most linked entities", "Entities by number of links pointing at them (types excluded).",
      "SELECT ?entity (COUNT(?s) AS ?links) WHERE { ?s ?p ?entity FILTER(isIRI(?entity) && ?p != rdf:type) } GROUP BY ?entity ORDER BY DESC(?links) LIMIT 30"),
-    ("areas", "C functions per code area", "Functions defined in files of each directory.",
-     "SELECT ?area (COUNT(?f) AS ?functions) WHERE { ?f a cx:Function ; cx:definedIn ?file . ?file pg:inArea ?area } GROUP BY ?area ORDER BY DESC(?functions) LIMIT 30"),
-    ("raised", "Most raised error conditions", "SQLSTATEs by number of functions whose body references the ERRCODE_ macro.",
-     "SELECT ?sqlstate (COUNT(DISTINCT ?f) AS ?functions) WHERE { ?f pg:mayRaise ?sqlstate } GROUP BY ?sqlstate ORDER BY DESC(?functions) LIMIT 30"),
-    ("settings", "Most read settings", "Configuration parameters by number of functions reading their C variable.",
-     "SELECT ?setting (COUNT(DISTINCT ?f) AS ?readers) WHERE { ?f pg:readsSetting ?setting } GROUP BY ?setting ORDER BY DESC(?readers) LIMIT 30"),
-    ("created", "Most created node types", "Node types by number of functions calling makeNode(X).",
-     "SELECT ?node (COUNT(DISTINCT ?f) AS ?creators) WHERE { ?f pg:createsNode ?node } GROUP BY ?node ORDER BY DESC(?creators) LIMIT 30"),
-    ("inspected", "Most inspected node types", "Node types tested or cast (IsA, castNode, T_X).",
-     "SELECT ?node (COUNT(DISTINCT ?f) AS ?inspectors) WHERE { ?f pg:inspectsNode ?node } GROUP BY ?node ORDER BY DESC(?inspectors) LIMIT 30"),
     ("called", "Most called functions", "Functions by number of distinct callers.",
      "SELECT ?function (COUNT(DISTINCT ?caller) AS ?callers) WHERE { ?caller cx:calls ?function . ?function a cx:Function } GROUP BY ?function ORDER BY DESC(?callers) LIMIT 30"),
     ("complex", "Most complex functions", "Cyclomatic complexity (1 + branch points).",
      "SELECT ?function ?complexity WHERE { ?function cx:complexity ?complexity } ORDER BY DESC(?complexity) LIMIT 30"),
-    ("hooks", "Hooks by functions touching them", "Functions that read or install each extension hook.",
-     "SELECT ?hook (COUNT(DISTINCT ?f) AS ?functions) WHERE { ?f pg:touchesHook ?hook } GROUP BY ?hook ORDER BY DESC(?functions) LIMIT 40"),
-    ("lookups", "Most referenced catalogs", "Catalogs by number of columns that look them up (BKI_LOOKUP).",
-     "SELECT ?catalog (COUNT(?column) AS ?lookups) WHERE { ?column pg:lookupCatalog ?catalog } GROUP BY ?catalog ORDER BY DESC(?lookups) LIMIT 30"),
-    ("sqlimpl", "SQL functions per implementing file", "Built-in SQL functions whose C implementation lives in each file.",
-     "SELECT ?file (COUNT(DISTINCT ?sql) AS ?sqlFunctions) WHERE { ?f pg:implementsSQLFunction ?sql ; cx:definedIn ?file } GROUP BY ?file ORDER BY DESC(?sqlFunctions) LIMIT 30"),
 ];
 
 fn aggregates(l: &Loaded) -> Value {
@@ -374,8 +352,8 @@ mod tests {
         assert_eq!(s, StatusCode::OK);
         assert_eq!(v["triples"], 125);
         assert_eq!(v["baseline_triples"], 128);
-        assert_eq!(v["version"], "fix2");
-        assert_eq!(v["baseline"], "fix1");
+        assert_eq!(v["version"], Value::Null, "no build-meta beside the fixture: no commit to show");
+        assert_eq!(v["baseline"], "baseline", "a loaded comparison graph is named generically");
     }
 
     #[tokio::test]
@@ -403,8 +381,7 @@ mod tests {
         assert_eq!(g["total"], 20, "true total, for the group node");
         assert_eq!(g["items"].as_array().unwrap().len(), 5, "sample limited by n");
         assert_eq!(g["label"], "may raise");
-        let grounded: Vec<&str> = v["grounding"].as_array().unwrap().iter().filter_map(|x| x["groundedIn"].as_str()).collect();
-        assert!(grounded.contains(&"src/backend/utils/errcodes.txt"));
+        assert!(v["grounding"].as_array().unwrap().iter().all(|x| x["groundedIn"].is_null()), "no project-specific groundedIn is read");
     }
 
     #[tokio::test]
@@ -478,8 +455,8 @@ mod tests {
     #[tokio::test]
     async fn delta_summary_and_lists() {
         let (_, v) = get("/api/delta").await;
-        assert_eq!(v["baseline"], "fix1");
-        assert_eq!(v["current"], "fix2");
+        assert_eq!(v["baseline"], Value::Null);
+        assert_eq!(v["current"], Value::Null);
         let f = v["sections"].as_array().unwrap().iter().find(|s| s["class"] == "cx:Function").unwrap();
         assert_eq!((f["added"].as_u64(), f["removed"].as_u64(), f["changed"].as_u64()), (Some(1), Some(1), Some(1)));
         let (_, v) = get("/api/delta/list?class=cx:Function&status=removed").await;

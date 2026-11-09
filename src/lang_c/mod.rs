@@ -2,24 +2,23 @@
 //!
 //! Parses C translation units with tree-sitter-c and extracts a language-level
 //! model: functions (signature, header comment, calls, identifiers referenced,
-//! diagnostic messages, a token-level body hash), header prototypes, structs and
-//! their fields, enums, typedefs, macros, globals, and includes.
+//! a token-level body hash), header prototypes, structs and their fields,
+//! enums, typedefs, macros, globals, and includes.
 //!
-//! The extractor knows nothing about any particular project. Project knowledge
-//! (what an identifier *means*) lives in `crate::grounding`, which consumes the
-//! `CFile` model produced here.
+//! The extractor knows nothing about any particular project. What it needs to
+//! know about a project's macros is derived from the scanned files themselves
+//! (`prepass`).
 //!
 //! Everything is deterministic: collections are ordered sets, and the body hash
 //! is FNV-1a over the non-comment leaf tokens, so it ignores whitespace, comments
 //! and line moves but changes with any token of real code.
 
+pub mod prepass;
 pub mod rdf;
 
 use std::collections::BTreeSet;
 use tree_sitter::{Node, Parser};
 
-/// A length-preserving source rewrite applied before parsing (macro erasure).
-pub type Prepass = fn(&str) -> String;
 
 #[derive(Debug, Clone, Default)]
 pub struct CFile {
@@ -36,7 +35,7 @@ pub struct CFile {
     pub typedefs: Vec<CTypedef>,
     pub macros: Vec<CMacro>,
     pub globals: Vec<CGlobal>,
-    /// Top-level `NAME(arg);` macro invocations, e.g. `PG_FUNCTION_INFO_V1(foo)`
+    /// Top-level `NAME(arg);` macro invocations, e.g. `REGISTER_HANDLER(foo)`
     pub top_level_calls: BTreeSet<(String, String)>,
     /// tree-sitter ERROR / MISSING nodes left after the prepass
     pub parse_errors: usize,
@@ -72,10 +71,6 @@ pub struct CFunction {
     pub type_refs: BTreeSet<String>,
     /// (callee, argument index, identifier) for arguments that are bare identifiers
     pub call_args: BTreeSet<(String, usize, String)>,
-    /// (callee, text) for string literals passed to diagnostic calls
-    pub messages: BTreeSet<(String, String)>,
-    /// Levels passed as the first argument of `ereport`/`elog`-style calls
-    pub error_levels: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -133,16 +128,6 @@ pub struct CGlobal {
     pub line: usize,
 }
 
-/// Diagnostic calls whose string-literal argument is a human-readable message.
-const MESSAGE_CALLS: &[&str] = &[
-    "errmsg", "errmsg_internal", "errmsg_plural", "errdetail", "errdetail_internal",
-    "errdetail_plural", "errdetail_log", "errhint", "errhint_plural", "errcontext",
-    "elog", "pg_fatal", "pg_log_error", "pg_log_warning", "pg_log_info", "pg_log_error_detail",
-    "pg_log_error_hint",
-];
-
-/// Calls whose first argument is a severity level.
-const LEVEL_CALLS: &[&str] = &["ereport", "elog", "ereport_domain"];
 
 pub fn new_parser() -> Parser {
     let mut p = Parser::new();
@@ -152,11 +137,11 @@ pub fn new_parser() -> Parser {
 }
 
 /// Parse one C file into the language-level model.
-pub fn extract(parser: &mut Parser, rel_path: &str, raw: &str, prepass: Option<Prepass>) -> CFile {
+pub fn extract(parser: &mut Parser, rel_path: &str, raw: &str, macros: Option<&prepass::MacroLists>) -> CFile {
     let src_owned;
-    let src: &str = match prepass {
-        Some(f) => {
-            src_owned = f(raw);
+    let src: &str = match macros {
+        Some(lists) => {
+            src_owned = prepass::prepass(raw, lists);
             debug_assert_eq!(src_owned.len(), raw.len(), "prepass must preserve length");
             &src_owned
         }
@@ -265,7 +250,7 @@ fn walk_top(node: Node, b: &[u8], file: &mut CFile) {
 }
 
 fn top_level_call(node: Node, b: &[u8], file: &mut CFile) {
-    // `PG_FUNCTION_INFO_V1(foo);` parses either as a call statement or as a
+    // `REGISTER_HANDLER(foo);` parses either as a call statement or as a
     // declaration with a parenthesized declarator; both reach here as text.
     let t = norm_ws(text(node, b));
     let t = t.trim_end_matches(';').trim();
@@ -456,44 +441,13 @@ fn call(n: Node, b: &[u8], f: &mut CFunction) {
         if matches!(a.kind(), "identifier" | "type_identifier") {
             f.call_args.insert((callee.clone(), i, text(*a, b).to_string()));
         } else if a.kind() == "type_descriptor" {
-            // makeNode(Query) may parse its argument as a type descriptor
+            // a macro taking a type name may parse its argument as a type descriptor
             f.call_args.insert((callee.clone(), i, norm_ws(text(*a, b))));
-        }
-    }
-    if LEVEL_CALLS.contains(&callee.as_str()) {
-        if let Some(first) = args.first() {
-            if first.kind() == "identifier" {
-                f.error_levels.insert(text(*first, b).to_string());
-            }
-        }
-    }
-    if MESSAGE_CALLS.contains(&callee.as_str()) {
-        if let Some(s) = args.iter().find(|a| matches!(a.kind(), "string_literal" | "concatenated_string")) {
-            let msg = string_value(*s, b);
-            if !msg.is_empty() {
-                f.messages.insert((callee.clone(), msg));
-            }
         }
     }
     f.calls.insert(callee);
 }
 
-fn string_value(n: Node, b: &[u8]) -> String {
-    match n.kind() {
-        "string_literal" => {
-            let t = text(n, b);
-            t.strip_prefix('"').and_then(|t| t.strip_suffix('"')).unwrap_or(t).to_string()
-        }
-        "concatenated_string" => {
-            let mut c = n.walk();
-            n.named_children(&mut c)
-                .map(|p| if p.kind() == "string_literal" { string_value(p, b) } else { format!("%{{{}}}", text(p, b)) })
-                .collect::<Vec<_>>()
-                .join("")
-        }
-        _ => String::new(),
-    }
-}
 
 // ----------------------------------------------------------------------------
 // Types (structs, unions, enums, typedefs) — anywhere outside function bodies
@@ -918,13 +872,13 @@ mod tests {
 
     #[test]
     fn erase_preserves_length_and_lines() {
-        let src = "int x pg_node_attr(a, b(c));\n/* PGDLLIMPORT */ extern PGDLLIMPORT int y;\n";
-        let out = erase_macros(src, &["pg_node_attr", "PGDLLIMPORT"], &[]);
+        let src = "int x node_attr(a, b(c));\n/* DLLIMPORT */ extern DLLIMPORT int y;\n";
+        let out = erase_macros(src, &["node_attr", "DLLIMPORT"], &[]);
         assert_eq!(out.len(), src.len());
         assert_eq!(out.lines().count(), src.lines().count());
-        assert!(!out.contains("pg_node_attr"));
-        assert!(out.contains("/* PGDLLIMPORT */"), "comments are left alone");
-        assert!(!out.contains("extern PGDLLIMPORT"));
+        assert!(!out.contains("node_attr"));
+        assert!(out.contains("/* DLLIMPORT */"), "comments are left alone");
+        assert!(!out.contains("extern DLLIMPORT"));
     }
 
     #[test]
@@ -959,10 +913,10 @@ static int
 add_checked(int a, int b)
 {
     int r;
-    if (pg_add_s32_overflow(a, b, &r))
-        ereport(ERROR,
-                (errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
-                 errmsg("integer out of range")));
+    if (add_overflows(a, b, &r))
+        report(ERROR_LEVEL,
+               (code(ERRCODE_OUT_OF_RANGE),
+                message("integer out of range")));
     return r;
 }
 "#;
@@ -974,9 +928,8 @@ add_checked(int a, int b)
         assert!(fun.is_static);
         assert_eq!(fun.signature, "int add_checked(int, int)");
         assert_eq!(fun.params[1].name, "b");
-        assert!(fun.identifiers.contains("ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE"));
-        assert!(fun.error_levels.contains("ERROR"));
-        assert!(fun.messages.contains(&("errmsg".to_string(), "integer out of range".to_string())));
+        assert!(fun.identifiers.contains("ERRCODE_OUT_OF_RANGE"));
+        assert!(fun.calls.contains("report") && fun.calls.contains("message"));
         assert_eq!(fun.comment.as_deref(), Some("add_checked - add two ints, failing on overflow"));
         assert_eq!(fun.complexity, 2);
     }

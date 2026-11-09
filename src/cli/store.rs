@@ -130,10 +130,9 @@ impl Loaded {
     fn load_tbox(&self) -> HashMap<String, (String, Option<String>, Option<String>)> {
         let q = "PREFIX owl: <http://www.w3.org/2002/07/owl#>
             PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-            PREFIX pg: <https://ontosys.io/ns/pg#>
             SELECT ?t ?label ?comment ?grounded WHERE {
               ?t a ?k . FILTER(?k IN (owl:Class, owl:ObjectProperty, owl:DatatypeProperty))
-              OPTIONAL { ?t rdfs:label ?label } OPTIONAL { ?t rdfs:comment ?comment } OPTIONAL { ?t pg:groundedIn ?grounded }
+              OPTIONAL { ?t rdfs:label ?label } OPTIONAL { ?t rdfs:comment ?comment }
             }";
         let mut out = HashMap::new();
         if let Ok(QueryResults::Solutions(sol)) = SparqlEvaluator::new().parse_query(q).map(|p| p.on_store(&self.store).execute()).unwrap_or_else(|_| Err(oxigraph::sparql::QueryEvaluationError::Unexpected("parse".into()))) {
@@ -560,7 +559,7 @@ impl Loaded {
             *kinds.entry(diff::change_kind(&a.diffs[s])).or_default() += 1;
         }
         Some(json!({
-            "baseline": a.a.version, "current": a.b.version,
+            "baseline": Value::Null, "current": Value::Null,
             "triples": { "baseline": a.a.triples, "current": a.b.triples },
             "entities_differ": a.diffs.len(),
             "moves": a.moves.len(),
@@ -649,12 +648,10 @@ pub fn local_name(iri: &str) -> &str {
     t.rsplit(['#', '/']).next().filter(|s| !s.is_empty()).unwrap_or(t)
 }
 
-/// `pg:Foo` → full IRI (only the prefixes ontosys emits).
+/// `cx:Foo` → full IRI (only the prefixes ontosys emits).
 pub fn expand(c: &str) -> String {
     for (short, ns) in [
         ("cx:", "https://ontosys.io/ns/c#"),
-        ("pg:", "https://ontosys.io/ns/pg#"),
-        ("pgcat:", "https://ontosys.io/ns/pgcat#"),
         ("rdf:", "http://www.w3.org/1999/02/22-rdf-syntax-ns#"),
         ("rdfs:", "http://www.w3.org/2000/01/rdf-schema#"),
         ("owl:", "http://www.w3.org/2002/07/owl#"),

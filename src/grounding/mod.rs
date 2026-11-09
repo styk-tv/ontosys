@@ -1,9 +1,6 @@
-//! # Grounding
+//! # Vocabulary
 //!
-//! Project-specific layers that attach meaning to the language-level graph
-//! using the project's own declarative sources, plus the vocabulary (TBox)
-//! both layers use.
+//! The C layer's vocabulary (TBox), emitted into every graph that has C so the
+//! data carries its own schema. Nothing here is specific to any one project.
 
-pub mod dat;
-pub mod postgres;
 pub mod vocab;

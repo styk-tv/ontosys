@@ -9,7 +9,7 @@ use crate::parser::markdown_parser::parse_markdown;
 use crate::graph::GraphBuilder;
 use crate::graph::docs_builder::DocsBuilder;
 use crate::ontology::TripleSet;
-use crate::grounding::{postgres, vocab};
+use crate::grounding::vocab;
 use crate::lang_c::{self, CFile};
 use std::path::Path;
 use std::fs;
@@ -81,7 +81,6 @@ pub async fn run(
     let (c_paths, files): (Vec<_>, Vec<_>) = files.into_iter().partition(|p| {
         matches!(p.extension().and_then(|e| e.to_str()), Some("c" | "h"))
     });
-    let postgres_tree = !c_paths.is_empty() && postgres::detect(&git_root);
 
     // Setup progress tracking
     let multi_progress = MultiProgress::new();
@@ -129,13 +128,25 @@ pub async fn run(
         overall_pb.inc(1);
     });
 
-    let prepass: Option<lang_c::Prepass> = if postgres_tree { Some(postgres::prepass) } else { None };
-    let mut c_files: Vec<CFile> = c_paths
+    // C: read every file once, derive the loop and erased macros from the
+    // tree's own #defines (never from a shipped list), then parse with them.
+    let c_sources: Vec<(String, String)> = c_paths
         .par_iter()
-        .map_init(lang_c::new_parser, |parser, path| {
+        .map(|path| {
             let raw = fs::read(path).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
             let rel = path.strip_prefix(&git_root).unwrap_or(path).to_string_lossy().replace('\\', "/");
-            let f = lang_c::extract(parser, &rel, &raw, prepass);
+            (rel, raw)
+        })
+        .collect();
+    let macro_lists = lang_c::prepass::derive_macros(&c_sources);
+    let unresolved_macro_statements: usize = c_sources
+        .par_iter()
+        .map(|(_, raw)| lang_c::prepass::unresolved_macro_statements(raw, &macro_lists.defined))
+        .sum();
+    let mut c_files: Vec<CFile> = c_sources
+        .par_iter()
+        .map_init(lang_c::new_parser, |parser, (rel, raw)| {
+            let f = lang_c::extract(parser, rel, raw, Some(&macro_lists));
             overall_pb.inc(1);
             f
         })
@@ -203,15 +214,10 @@ pub async fn run(
 
     let mut triples = builder.build_from_ast(&all_ast_nodes)?;
 
-    let mut grounding_stats = None;
     if !c_files.is_empty() {
         let ix = lang_c::rdf::index(project_id, &c_files);
         lang_c::rdf::to_triples(project_id, &c_files, &ix, &mut triples);
         vocab::emit(&mut triples);
-        if postgres_tree {
-            build_pb.set_message("Grounding in PostgreSQL sources...");
-            grounding_stats = Some(postgres::ground(project_id, &git_root, &c_files, &ix, &mut triples)?);
-        }
     }
     triples.canonicalize();
 
@@ -220,11 +226,11 @@ pub async fn run(
 
     println!("  Generated {} RDF triples", style(triples.len()).cyan());
     println!();
-    if let Some(stats) = &grounding_stats {
-        info("PostgreSQL grounding:");
-        for (k, v) in stats {
-            println!("    {:<40} {}", k, style(v).cyan());
-        }
+    if !c_files.is_empty() {
+        println!(
+            "  C prepass (derived from the tree's own #defines): {} loop macros, {} erased macros, {} statement macros with no definition",
+            macro_lists.loop_macros.len(), macro_lists.erased.len(), unresolved_macro_statements
+        );
         println!();
     }
 
@@ -276,16 +282,6 @@ pub async fn run(
             style("→").dim(),
             fs::metadata(&json_path)?.len()
         );
-    } else if postgres_tree {
-        let overview = overview_subset(&triples, postgres::OVERVIEW_CLASSES);
-        let mut jsonld = triples_to_jsonld(&overview, project_id);
-        jsonld["view"] = serde_json::json!(format!(
-            "overview: grounded PostgreSQL structure only ({} of {} triples); query graph.nt for the full graph",
-            overview.len(), triples.len()
-        ));
-        fs::write(&json_path, serde_json::to_string_pretty(&jsonld)?)?;
-        println!("  {} graph.json (overview: {} of {} triples — full graph too large to draw)",
-            style("→").dim(), overview.len(), triples.len());
     } else {
         let _ = fs::remove_file(&json_path);
         println!("  {} graph.json skipped ({} triples > {} visualization limit)",
@@ -372,7 +368,12 @@ pub async fn run(
         c_files: c_files.len(),
         c_functions,
         c_parse_error_nodes: c_errors,
-        grounding: grounding_stats,
+        prepass: (!c_files.is_empty()).then(|| PrepassMeta {
+            loop_macros: macro_lists.loop_macros.iter().cloned().collect(),
+            erased_macro_count: macro_lists.erased.len(),
+            defined_macro_count: macro_lists.defined.len(),
+            unresolved_macro_statements,
+        }),
         files_processed: parsed_count,
         files_failed: errors,
         triples_generated: triples.len(),
@@ -389,6 +390,20 @@ pub async fn run(
         data_path.join("build-meta.json"),
         serde_json::to_string_pretty(&metadata)?
     )?;
+    // The C parse input in full: which macros the tree's own #defines made
+    // loop headers or erased (mostly include guards, hence not in build-meta).
+    let prepass_path = data_path.join("prepass.json");
+    if c_files.is_empty() {
+        let _ = fs::remove_file(&prepass_path);
+    } else {
+        fs::write(
+            &prepass_path,
+            serde_json::to_string_pretty(&serde_json::json!({
+                "loop_macros": macro_lists.loop_macros,
+                "erased_macros": macro_lists.erased,
+            }))?,
+        )?;
+    }
 
     println!();
     success("Build complete!");
@@ -520,32 +535,6 @@ fn process_file(
     parser.parse_file(relative_path, &source).map_err(|e| anyhow::anyhow!("{}", e))
 }
 
-/// Triples of entities typed with one of `classes` (in the pg: namespace), keeping
-/// only links between such entities, so the drawing stays connected and small.
-fn overview_subset(triples: &TripleSet, classes: &[&str]) -> TripleSet {
-    use crate::ontology::{Term, PG};
-    use std::collections::HashSet;
-    let wanted: HashSet<String> = classes.iter().map(|c| PG.iri(c).as_str().to_string()).collect();
-    let rdf_type = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
-    let keep: HashSet<String> = triples
-        .iter()
-        .filter(|t| t.predicate.as_str() == rdf_type)
-        .filter_map(|t| match (&t.subject, &t.object) {
-            (Term::Iri(s), Term::Iri(o)) if wanted.contains(o.as_str()) => Some(s.as_str().to_string()),
-            _ => None,
-        })
-        .collect();
-    triples
-        .iter()
-        .filter(|t| matches!(&t.subject, Term::Iri(s) if keep.contains(s.as_str())))
-        .filter(|t| match &t.object {
-            Term::Iri(o) => t.predicate.as_str() == rdf_type || keep.contains(o.as_str()),
-            _ => true,
-        })
-        .cloned()
-        .collect()
-}
-
 /// Above this many triples the full graph.json (browser visualization) is not written.
 const MAX_VIZ_TRIPLES: usize = 250_000;
 
@@ -564,8 +553,9 @@ struct BuildMetadata {
     c_files: usize,
     c_functions: usize,
     c_parse_error_nodes: usize,
+    /// What the C prepass derived from the tree's own #defines (full lists in prepass.json).
     #[serde(skip_serializing_if = "Option::is_none")]
-    grounding: Option<std::collections::BTreeMap<String, usize>>,
+    prepass: Option<PrepassMeta>,
     files_processed: usize,
     files_failed: usize,
     triples_generated: usize,
@@ -584,6 +574,15 @@ struct BuildMetadata {
     regular_comments_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     todo_count: Option<usize>,
+}
+
+#[derive(serde::Serialize)]
+struct PrepassMeta {
+    loop_macros: Vec<String>,
+    erased_macro_count: usize,
+    defined_macro_count: usize,
+    /// Indented `NAME(args)` lines whose NAME no scanned file defines.
+    unresolved_macro_statements: usize,
 }
 
 /// Convert triples to JSON-LD format for visualization

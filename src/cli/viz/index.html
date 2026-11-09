@@ -232,17 +232,10 @@ const fmt = n => Number(n).toLocaleString();
 
 // ---------------------------------------------------------------- colours
 const KIND = {
-  'pg:BackendSubsystem': '#e8823a', 'pg:ClientProgram': '#d0651c', 'pg:ClientLibrary': '#c3942a',
-  'pg:ProceduralLanguage': '#cfa936', 'pg:Extension': '#9563d4', 'pg:TestModule': '#7f8893',
-  'pg:SharedCode': '#bf9a35', 'pg:PublicHeaders': '#a2762a', 'pg:CodeArea': '#8f98a2',
-  'pg:SystemCatalog': '#2f6fd6', 'pg:CatalogColumn': '#5d9fe6', 'pg:NodeType': '#0f8b8d',
-  'pg:SQLState': '#df5b55', 'pg:SQLStateClass': '#b4342f', 'pg:BuiltinFunction': '#c0589f',
-  'pg:DataType': '#a64f9a', 'pg:Operator': '#8e4aa8', 'pg:ConfigParameter': '#d27c2c',
-  'pg:Hook': '#b8860b', 'pg:WaitEvent': '#6e8b3d', 'pg:LWLock': '#5f7a33', 'pg:Keyword': '#7a7a7a',
   'cx:Function': '#6a5acd', 'cx:Struct': '#4677c9', 'cx:Field': '#6b93d6', 'cx:SourceFile': '#8d7f62',
   'cx:HeaderFile': '#a08a5c', 'cx:ExternalSymbol': '#9a9a9a', 'cx:Macro': '#a3779a', 'cx:Prototype': '#5a8f7d',
 };
-const kindColor = k => KIND[k] || (String(k).startsWith('pg:') ? '#7d63b8' : String(k).startsWith('cx:') ? '#3f8f8f' : k === 'other' ? '#8b949e' : L.hashColor(k));
+const kindColor = k => KIND[k] || (String(k).startsWith('cx:') ? '#3f8f8f' : k === 'other' ? '#8b949e' : L.hashColor(k));
 const short = k => L.shortName(k);
 const nameOf = t => L.displayName(t.label, t.iri);
 const statusDot = s => s && s !== 'unchanged' ? `<span class="status ${s}">${s}</span>` : '';
@@ -693,11 +686,9 @@ async function loadStats() {
   const classes = r.items.find(a => a.id === 'classes');
   const count = c => { const row = classes && classes.rows.find(x => x.class.short === c); return row ? +row.count.value : 0; };
   $('#numbers').innerHTML = [
-    [S.info.triples, 'triples'], [S.classes.length, 'classes'], [count('cx:Function'), 'C functions'], [count('pg:BuiltinFunction'), 'SQL functions'],
-    [count('pg:SystemCatalog'), 'catalogs'], [count('pg:ConfigParameter'), 'settings'], [count('pg:NodeType'), 'node types'],
+    [S.info.triples, 'triples'], [S.classes.length, 'classes'], [count('cx:Function'), 'C functions'],
   ].filter(x => x[0]).map(([n, l]) => `<div><b>${fmt(n)}</b><span>${l}</span></div>`).join('');
-  // the PostgreSQL starter query only where there are SQLSTATEs to ask about
-  if (!count('pg:SQLState') && classes) $('#query').value = classes.query;
+  if (classes) $('#query').value = classes.query;
   $('#tab-stats').innerHTML = `<div class="muted small">Computed with SPARQL over the full graph (${fmt(S.info.triples)} triples) at startup. Click any entity to travel to it.</div>` +
     r.items.map(a => a.error ? `<div class="agg"><h4>${esc(a.title)}</h4><div class="muted">${esc(a.error)}</div></div>` :
       `<div class="agg"><h3>${esc(a.title)}</h3><div class="muted small">${esc(a.about)} <span class="go-q" data-q="${esc(a.query)}" style="cursor:pointer;color:var(--accent)">query ↗</span> · ${a.elapsed_ms} ms</div>${tableHtml(a.vars, a.rows)}</div>`).join('');
@@ -726,7 +717,7 @@ async function loadDelta() {
   const ex = $('#examples');
   [['Triples removed (baseline MINUS current)', `SELECT ?s ?p ?o WHERE {\n  GRAPH <urn:ontosys:baseline> { ?s ?p ?o }\n  MINUS { ?s ?p ?o }\n} LIMIT 200`],
    ['Count removed / added triples', `SELECT ?removed ?added WHERE {\n  { SELECT (COUNT(*) AS ?removed) WHERE { GRAPH <urn:ontosys:baseline> { ?s ?p ?o } MINUS { ?s ?p ?o } } }\n  { SELECT (COUNT(*) AS ?added) WHERE { ?s ?p ?o MINUS { GRAPH <urn:ontosys:baseline> { ?s ?p ?o } } } }\n}`],
-   ['Functions that no longer raise an error condition', `PREFIX pg: <https://ontosys.io/ns/pg#>\nPREFIX cx: <https://ontosys.io/ns/c#>\nSELECT ?f ?s WHERE {\n  GRAPH <urn:ontosys:baseline> { ?f pg:mayRaise ?s }\n  ?f a cx:Function .\n  MINUS { ?f pg:mayRaise ?s }\n}`]]
+   ['C functions that no longer call something', `PREFIX cx: <https://ontosys.io/ns/c#>\nSELECT ?f ?callee WHERE {\n  GRAPH <urn:ontosys:baseline> { ?f cx:calls ?callee }\n  ?f a cx:Function .\n  MINUS { ?f cx:calls ?callee }\n}`]]
     .forEach(([t, q]) => { const o = document.createElement('option'); o.value = q; o.textContent = 'Δ ' + t; ex.appendChild(o); });
 }
 async function deltaList(cls, status, title, offset) {
@@ -774,11 +765,9 @@ async function browseClass(c, q, offset) {
 }
 
 // ---------------------------------------------------------------- sparql
-$('#query').value = `PREFIX pg: <https://ontosys.io/ns/pg#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-SELECT ?sqlstate (COUNT(DISTINCT ?f) AS ?functions) WHERE {
-  ?f pg:mayRaise ?sqlstate
-} GROUP BY ?sqlstate ORDER BY DESC(?functions) LIMIT 20`;
+$('#query').value = `SELECT ?class (COUNT(?s) AS ?count) WHERE {
+  ?s a ?class
+} GROUP BY ?class ORDER BY DESC(?count) LIMIT 20`;
 $('#examples').onchange = e => { if (e.target.value) { $('#query').value = e.target.value; runQuery(); } };
 $('#run').onclick = () => runQuery();
 $('#query').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runQuery(); } });
@@ -812,7 +801,7 @@ async function boot() {
   }
   const skipped = S.info.skipped_lines ? ` ${fmt(S.info.skipped_lines)} invalid lines skipped.` : '';
   $('#mode').innerHTML = (v.mode === 'overview'
-    ? `Overview: grounded structure (${fmt(v.nodes.length)} of ${fmt(S.info.triples)} triples' entities). Search or travel links to bring in anything else.`
+    ? `Overview: a subset (${fmt(v.nodes.length)} of ${fmt(S.info.triples)} triples' entities). Search or travel links to bring in anything else.`
     : v.mode === 'classes'
     ? `Overview: ${fmt(S.classes.length)} classes and how they link. Click a class to draw its entities, or use Browse.`
     : `Full graph (${fmt(v.nodes.length)} entities).`) + skipped;

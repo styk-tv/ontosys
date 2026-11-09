@@ -15,7 +15,6 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct Def {
     pub iri: Iri,
     pub path: String,
-    pub component: String,
     pub is_static: bool,
     pub is_header: bool,
 }
@@ -33,12 +32,14 @@ pub struct CIndex {
 impl CIndex {
     /// Resolve a function name as seen from `from_path`.
     ///
-    /// Order: static in the same file → static inline in a header → the single
-    /// non-static definition in the same component → the single one in shared
-    /// code → the single one anywhere. Ambiguity yields None.
+    /// Order: any definition in the same file → static inline in a header →
+    /// the single non-static definition whose directory shares the most
+    /// leading path segments with the caller's → the single one anywhere.
+    /// Ambiguity yields None. Only paths are used, so any project layout (or
+    /// a carved-out part of one) resolves the same way.
     pub fn resolve_fn(&self, name: &str, from_path: &str) -> Option<&Def> {
         let defs = self.functions.get(name)?;
-        if let Some(d) = defs.iter().find(|d| d.is_static && d.path == from_path) {
+        if let Some(d) = defs.iter().find(|d| d.path == from_path) {
             return Some(d);
         }
         let header_inline: Vec<&Def> = defs.iter().filter(|d| d.is_static && d.is_header).collect();
@@ -46,14 +47,9 @@ impl CIndex {
             return Some(header_inline[0]);
         }
         let globals: Vec<&Def> = defs.iter().filter(|d| !d.is_static).collect();
-        let comp = component_of(from_path);
-        let same: Vec<&Def> = globals.iter().copied().filter(|d| d.component == comp).collect();
-        if same.len() == 1 {
-            return Some(same[0]);
-        }
-        let shared: Vec<&Def> = globals.iter().copied().filter(|d| is_shared_component(&d.component)).collect();
-        if same.is_empty() && shared.len() == 1 {
-            return Some(shared[0]);
+        let nearest = nearest(&globals, from_path);
+        if nearest.len() == 1 {
+            return Some(nearest[0]);
         }
         if globals.len() == 1 {
             return Some(globals[0]);
@@ -61,12 +57,13 @@ impl CIndex {
         None
     }
 
-    /// Non-static definitions of `name`, preferring the given component.
-    pub fn global_defs(&self, name: &str, prefer_component: &str) -> Vec<&Def> {
+    /// Non-static definitions of `name` nearest to `from_path` (most shared
+    /// leading directories); all of them when none shares a directory.
+    pub fn global_defs(&self, name: &str, from_path: &str) -> Vec<&Def> {
         let Some(defs) = self.functions.get(name) else { return vec![] };
         let globals: Vec<&Def> = defs.iter().filter(|d| !d.is_static).collect();
-        let pref: Vec<&Def> = globals.iter().copied().filter(|d| d.component == prefer_component).collect();
-        if pref.is_empty() { globals } else { pref }
+        let near = nearest(&globals, from_path);
+        if near.is_empty() { globals } else { near }
     }
 
     /// A struct by name, preferring a header definition.
@@ -76,23 +73,24 @@ impl CIndex {
     }
 }
 
-/// The build unit a path belongs to (used to disambiguate same-named symbols
-/// linked into different programs).
-pub fn component_of(path: &str) -> String {
-    let segs: Vec<&str> = path.split('/').collect();
-    let depth = match segs.as_slice() {
-        ["src", "backend", ..] => 2,
-        ["src", "bin" | "interfaces" | "pl", ..] => 3,
-        ["src", "test", "modules", ..] => 4,
-        ["src", ..] => 2,
-        _ => 2,
+/// Leading directory segments two repository paths share.
+fn shared_dirs(a: &str, b: &str) -> usize {
+    let dirs = |p: &str| -> Vec<String> {
+        let mut segs: Vec<String> = p.split('/').map(str::to_string).collect();
+        segs.pop();
+        segs
     };
-    let dirs = &segs[..segs.len().saturating_sub(1)];
-    dirs[..depth.min(dirs.len())].join("/")
+    dirs(a).iter().zip(dirs(b).iter()).take_while(|(x, y)| x == y).count()
 }
 
-fn is_shared_component(c: &str) -> bool {
-    matches!(c, "src/common" | "src/port" | "src/fe_utils" | "src/include" | "src/timezone")
+/// The definitions sharing the most leading directories with `from_path`;
+/// empty when the best share is none at all.
+fn nearest<'a>(defs: &[&'a Def], from_path: &str) -> Vec<&'a Def> {
+    let best = defs.iter().map(|d| shared_dirs(&d.path, from_path)).max().unwrap_or(0);
+    if best == 0 {
+        return Vec::new();
+    }
+    defs.iter().copied().filter(|d| shared_dirs(&d.path, from_path) == best).collect()
 }
 
 fn cx(local: &str) -> Iri {
@@ -124,11 +122,9 @@ pub fn index(project: &str, files: &[CFile]) -> CIndex {
     let mut ix = CIndex::default();
     for f in files {
         ix.files.insert(f.path.clone(), file_iri(project, &f.path));
-        let comp = component_of(&f.path);
         let def = |iri: Iri, is_static: bool| Def {
             iri,
             path: f.path.clone(),
-            component: comp.clone(),
             is_static,
             is_header: f.is_header,
         };
@@ -203,7 +199,7 @@ pub fn to_triples(project: &str, files: &[CFile], ix: &CIndex, out: &mut TripleS
             out.add(Triple::new(pi.clone(), cx("declaredIn"), fi.clone()));
             out.add(Triple::new(pi.clone(), cx("signature"), lit(&p.signature)));
             out.add(Triple::new(pi.clone(), cx("line"), int(p.line)));
-            for d in ix.global_defs(&p.name, &component_of(&f.path)).into_iter().take(32) {
+            for d in ix.global_defs(&p.name, &f.path).into_iter().take(32) {
                 out.add(Triple::new(pi.clone(), cx("declares"), d.iri.clone()));
             }
         }
@@ -327,18 +323,6 @@ fn function_triples(project: &str, f: &CFile, func: &CFunction, ix: &CIndex, out
         };
         out.add(Triple::new(fi.clone(), cx("calls"), target));
     }
-    for (callee, text) in &func.messages {
-        let pred = if callee.starts_with("errdetail") {
-            "emitsDetail"
-        } else if callee.starts_with("errhint") || callee == "pg_log_error_hint" {
-            "emitsHint"
-        } else if callee == "errcontext" {
-            "emitsContext"
-        } else {
-            "emitsMessage"
-        };
-        out.add(Triple::new(fi.clone(), cx(pred), lit(text)));
-    }
     let mut used: BTreeSet<&str> = BTreeSet::new();
     for t in func.type_refs.iter().map(|s| s.as_str()).chain(func.params.iter().filter_map(|p| base_type_ref(&p.type_text))) {
         used.insert(t);
@@ -369,12 +353,41 @@ fn base_type_ref(type_text: &str) -> Option<&str> {
 mod tests {
     use super::*;
 
+    fn def(path: &str, is_static: bool) -> Def {
+        Def { iri: Iri::new(format!("urn:t:{path}")), path: path.to_string(), is_static, is_header: path.ends_with(".h") }
+    }
+
     #[test]
-    fn components() {
-        assert_eq!(component_of("src/backend/utils/adt/int.c"), "src/backend");
-        assert_eq!(component_of("src/bin/psql/command.c"), "src/bin/psql");
-        assert_eq!(component_of("contrib/pg_trgm/trgm_op.c"), "contrib/pg_trgm");
-        assert_eq!(component_of("src/common/string.c"), "src/common");
+    fn resolution_prefers_same_file_then_nearest_directory() {
+        let mut ix = CIndex::default();
+        ix.functions.insert("f".into(), vec![def("a/x.c", false), def("a/b/y.c", false), def("c/z.c", false)]);
+        let at = |from: &str| ix.resolve_fn("f", from).map(|d| d.path.clone());
+        assert_eq!(at("a/b/w.c").as_deref(), Some("a/b/y.c"));
+        assert_eq!(at("c/q.c").as_deref(), Some("c/z.c"));
+        assert_eq!(at("a/x.c").as_deref(), Some("a/x.c"), "the caller's own file wins");
+        assert_eq!(at("d/e.c"), None, "three equally distant definitions are ambiguous");
+
+        let mut one = CIndex::default();
+        one.functions.insert("g".into(), vec![def("deep/down/g.c", false)]);
+        assert_eq!(one.resolve_fn("g", "elsewhere/h.c").map(|d| d.path.as_str()), Some("deep/down/g.c"));
+    }
+
+    #[test]
+    fn statics_stay_in_their_file() {
+        let mut ix = CIndex::default();
+        ix.functions.insert("s".into(), vec![def("a/one.c", true), def("a/two.c", true)]);
+        assert_eq!(ix.resolve_fn("s", "a/two.c").map(|d| d.path.as_str()), Some("a/two.c"));
+        assert!(ix.resolve_fn("s", "a/three.c").is_none());
+    }
+
+    #[test]
+    fn prototypes_link_to_the_nearest_definitions() {
+        let mut ix = CIndex::default();
+        ix.functions.insert("p".into(), vec![def("lib/a/p.c", false), def("tools/p.c", false)]);
+        let near: Vec<&str> = ix.global_defs("p", "lib/a/p.h").iter().map(|d| d.path.as_str()).collect();
+        assert_eq!(near, vec!["lib/a/p.c"]);
+        let all: Vec<&str> = ix.global_defs("p", "include/p.h").iter().map(|d| d.path.as_str()).collect();
+        assert_eq!(all, vec!["lib/a/p.c", "tools/p.c"], "no shared directory: every definition");
     }
 
     #[test]
