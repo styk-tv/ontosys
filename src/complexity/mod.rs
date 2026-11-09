@@ -8,6 +8,7 @@
 pub mod catalog;
 pub mod cost;
 pub mod engine;
+pub mod estimate;
 pub mod join;
 pub mod loops;
 pub mod model;

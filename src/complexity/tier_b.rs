@@ -107,7 +107,7 @@ pub fn tier_b(m: &Model) -> (Vec<TierB>, Vec<Vec<usize>>) {
 }
 
 /// Strongly connected components, callees before callers, without recursion.
-fn tarjan(succ: &[Vec<usize>]) -> Vec<Vec<usize>> {
+pub(crate) fn tarjan(succ: &[Vec<usize>]) -> Vec<Vec<usize>> {
     let n = succ.len();
     let (mut index, mut low) = (vec![usize::MAX; n], vec![0usize; n]);
     let mut on_stack = vec![false; n];

@@ -50,7 +50,8 @@ pub fn scan_file(rel_path: &str, bytes: &[u8], grammar: Grammar) -> (Vec<Functio
     while let Some((n, inside_fn)) = stack.pop() {
         if let Some((name_node, def, body)) = named_function(n, grammar, inside_fn) {
             let name = text(name_node, bytes).to_string();
-            let tier_a = analyze(body, bytes, &name, profile);
+            let mut tier_a = analyze(body, bytes, &name, profile);
+            tier_a.memoized = super::engine::detect_memo(def, body, bytes, &name, &tier_a, profile);
             out.push(FunctionFacts {
                 loops: super::loops::classify_all(body, bytes, grammar, &tier_a.loops),
                 tier_a,

@@ -433,6 +433,9 @@ fn analyze_body(body: Node, b: &[u8], f: &mut CFunction) {
     // Structure comes from the complexity engine; its C profile counts the
     // same decision points and statements this layer always has.
     f.tier_a = crate::complexity::engine::analyze(body, b, &f.name, &crate::complexity::profiles::c::C);
+    if let Some(def) = body.parent() {
+        f.tier_a.memoized = crate::complexity::engine::detect_memo(def, body, b, &f.name, &f.tier_a, &crate::complexity::profiles::c::C);
+    }
     f.complexity = f.tier_a.cyclomatic;
     f.statements = f.tier_a.statements;
     f.loops = crate::complexity::loops::classify_all(body, b, crate::complexity::Grammar::C, &f.tier_a.loops);

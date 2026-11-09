@@ -190,6 +190,10 @@ fn classify(n: Node, src: &[u8]) -> Classified {
     if matches!(cond_text, "1" | "true" | "True") {
         return Classified::of(Unbounded, String::new(), Vec::new());
     }
+    // `do { … } while (0)`: the body runs once (a `while (0)` never).
+    if matches!(cond_text, "0" | "false" | "False") {
+        return Classified::of(Constant, cond_text.to_string(), Vec::new());
+    }
     if matches!(cond.kind(), "let_condition" | "let_chain") {
         return Classified::of(Sentinel, cond_text.to_string(), Vec::new());
     }

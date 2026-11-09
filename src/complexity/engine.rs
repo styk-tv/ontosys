@@ -134,6 +134,44 @@ pub struct TierA {
     pub backward_gotos: Vec<usize>,
     pub calls: Vec<CallSite>,
     pub loops: Vec<LoopSite>,
+    /// A cache guards the recursion: a cache decorator, or a check reading a
+    /// memo/cache before the first self-call. Set by [`detect_memo`].
+    pub memoized: bool,
+}
+
+/// Whether a recursive function is memoised: a cache decorator above it
+/// (`@lru_cache`, `@cache`, `@functools.cache`), or an `if` mentioning a
+/// memo or cache between the start of its body and its first self-call.
+pub fn detect_memo(
+    def: Node,
+    body: Node,
+    src: &[u8],
+    name: &str,
+    a: &TierA,
+    profile: &dyn Profile,
+) -> bool {
+    let head_start = profile.definition_start(def).min(body.start_byte());
+    let head = String::from_utf8_lossy(&src[head_start..body.start_byte()]);
+    if ["lru_cache", "@cache", "functools.cache"]
+        .iter()
+        .any(|d| head.contains(d))
+    {
+        return true;
+    }
+    let Some(first) = a
+        .calls
+        .iter()
+        .filter(|c| c.callee == name)
+        .map(|c| c.start_byte)
+        .min()
+    else {
+        return false;
+    };
+    let prefix = String::from_utf8_lossy(&src[body.start_byte()..first.max(body.start_byte())])
+        .to_lowercase();
+    prefix
+        .lines()
+        .any(|l| l.contains("if") && (l.contains("memo") || l.contains("cache")))
 }
 
 /// What a plain `break` at this point leaves.

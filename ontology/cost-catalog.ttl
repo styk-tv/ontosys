@@ -309,3 +309,47 @@
 [ a code:CostEntry ; code:language "rust" ; code:operation "insert" ; code:receiverType "BTreeMap" ; code:worstClass code:OLogN ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
 [ a code:CostEntry ; code:language "rust" ; code:operation "remove" ; code:receiverType "HashMap" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Rust standard library documentation (hash map: O(1) average)" ] .
 [ a code:CostEntry ; code:language "rust" ; code:operation "remove" ; code:receiverType "BTreeMap" ; code:worstClass code:OLogN ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "assert!" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "debug_assert!" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "unreachable!" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "todo!" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "unimplemented!" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "matches!" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "cfg!" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "concat!" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "stringify!" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "include_str!" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "include_bytes!" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "env!" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "line!" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "file!" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "column!" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "module_path!" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "dbg!" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "vec!" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "Rust standard library documentation (linear in what it builds, prints or compares)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "format!" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "Rust standard library documentation (linear in what it builds, prints or compares)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "println!" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "Rust standard library documentation (linear in what it builds, prints or compares)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "print!" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "Rust standard library documentation (linear in what it builds, prints or compares)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "eprintln!" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "Rust standard library documentation (linear in what it builds, prints or compares)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "eprint!" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "Rust standard library documentation (linear in what it builds, prints or compares)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "write!" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "Rust standard library documentation (linear in what it builds, prints or compares)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "writeln!" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "Rust standard library documentation (linear in what it builds, prints or compares)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "panic!" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "Rust standard library documentation (linear in what it builds, prints or compares)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "assert_eq!" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "Rust standard library documentation (linear in what it builds, prints or compares)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "assert_ne!" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "Rust standard library documentation (linear in what it builds, prints or compares)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "debug_assert_eq!" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "Rust standard library documentation (linear in what it builds, prints or compares)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "debug_assert_ne!" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "Rust standard library documentation (linear in what it builds, prints or compares)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "int" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "float" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "round" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "divmod" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "pow" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "callable" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "getattr" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "setattr" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "hasattr" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "delattr" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "Number" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "String" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "Boolean" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "from" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ECMAScript specification and V8 notes" ] .

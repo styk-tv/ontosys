@@ -323,6 +323,17 @@ pub async fn run(
         }
     }
     complexity::rdf::tier_b_triples(project_id, &model, &tier_b, &call_cycles, &mut complexity_triples);
+    let macro_bodies = complexity::estimate::macro_bodies(project_id, &c_files);
+    let estimates = complexity::estimate::estimate_all(&model, &call_cycles, &catalog, &macro_bodies);
+    let mut by_basis: std::collections::BTreeMap<complexity::estimate::Basis, usize> = std::collections::BTreeMap::new();
+    let mut by_reason: std::collections::BTreeMap<complexity::estimate::Reason, usize> = std::collections::BTreeMap::new();
+    for e in &estimates {
+        *by_basis.entry(e.basis).or_default() += 1;
+        let reasons: std::collections::BTreeSet<_> = e.blockers.iter().map(|b| b.reason).collect();
+        for r in reasons {
+            *by_reason.entry(r).or_default() += 1;
+        }
+    }
     if config.redact_emails {
         complexity_triples = redact_triples(complexity_triples);
     }
@@ -441,6 +452,8 @@ pub async fn run(
         complexity: ComplexityMeta {
             hash_skipped_invalid_utf8: c_files.iter().filter(|f| f.hash_skipped).count(),
             catalog_version: catalog.version.clone(),
+            by_basis,
+            by_reason,
             loops_by_class,
             tier_a: {
                 let mut m: std::collections::BTreeMap<&'static str, complexity::join::AttachStats> =
@@ -681,6 +694,10 @@ struct ComplexityMeta {
     hash_skipped_invalid_utf8: usize,
     /// The cost catalog version (shipped, plus the repository overlay when present).
     catalog_version: String,
+    /// Functions by estimate basis (exact-shape, partial, unknown).
+    by_basis: std::collections::BTreeMap<complexity::estimate::Basis, usize>,
+    /// Functions by each reason their upper bound is missing.
+    by_reason: std::collections::BTreeMap<complexity::estimate::Reason, usize>,
     /// Loops of every analysed function, by bound class.
     loops_by_class: std::collections::BTreeMap<complexity::loops::BoundClass, usize>,
     /// Per grammar: functions analysed, attached to a declaration, and why not.
