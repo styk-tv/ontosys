@@ -246,9 +246,9 @@ pub async fn run(
         complexity::rdf::tier_a_triples(iri, &facts.tier_a, facts.definition_sha256.as_deref(), &mut triples);
     }
 
-    if !c_files.is_empty() {
-        let ix = lang_c::rdf::index(project_id, &c_files);
-        lang_c::rdf::to_triples(project_id, &c_files, &ix, &mut triples);
+    let c_index = (!c_files.is_empty()).then(|| lang_c::rdf::index(project_id, &c_files));
+    if let Some(ix) = &c_index {
+        lang_c::rdf::to_triples(project_id, &c_files, ix, &mut triples);
         vocab::emit(&mut triples);
     }
     triples.canonicalize();
@@ -294,6 +294,19 @@ pub async fn run(
         fs::metadata(&nt_path)?.len()
     );
     let graph_sha256 = sha256_hex(nt_text.as_bytes());
+
+    // complexity.nt: facts that change when *other* code changes (links,
+    // call graph, estimates), kept apart so graph.nt's sha stays about the code.
+    let mut complexity_triples = TripleSet::new();
+    if let Some(ix) = &c_index {
+        complexity::rdf::macro_links(project_id, &c_files, ix, &mut complexity_triples);
+    }
+    if config.redact_emails {
+        complexity_triples = redact_triples(complexity_triples);
+    }
+    let complexity_nt = data_path.join("complexity.nt");
+    let complexity_sha256 = complexity::output::write_complexity(&complexity_nt, complexity_triples)?;
+    println!("  {} complexity.nt ({} bytes)", style("→").dim(), fs::metadata(&complexity_nt)?.len());
 
     // `sha256sum -c .ontosys/data/inputs.sha256` from the repository root names
     // every input that changed since this build.
@@ -427,6 +440,8 @@ pub async fn run(
         files_failed: errors,
         triples_generated: triples.len(),
         graph_sha256,
+        complexity_method: "ontosys-complexity/v1",
+        complexity_sha256,
         inputs_sha256: sha256_hex(inputs_manifest_text.as_bytes()),
         languages: target_languages.iter().map(|l| l.name().to_string()).collect(),
         unparsed_by_extension: unparsed,
@@ -617,6 +632,10 @@ struct BuildMetadata {
     triples_generated: usize,
     /// sha256 of graph.nt's bytes as written.
     graph_sha256: String,
+    /// The complexity model that wrote complexity.nt.
+    complexity_method: &'static str,
+    /// sha256 of complexity.nt's bytes as written.
+    complexity_sha256: String,
     /// sha256 of inputs.sha256's bytes (every file this build read).
     inputs_sha256: String,
     languages: Vec<String>,

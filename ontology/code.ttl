@@ -53,3 +53,9 @@ code:definitionSha256 a owl:DatatypeProperty ;
     rdfs:label "definition sha256" ;
     rdfs:comment "sha256 (lowercase hex) of the definition's bytes exactly as in the file: from its first attached decorator or attribute (else its first byte) to its last byte; leading doc comments excluded; no normalisation. Absent when the file is not valid UTF-8." ;
     rdfs:range xsd:string .
+
+# ---- Links (complexity.nt) ----------------------------------------------------
+
+code:resolvesTo a owl:ObjectProperty ;
+    rdfs:label "resolves to" ;
+    rdfs:comment "From a called name that resolves to no function (a cx:ExternalSymbol) to each macro definition of that name. Several definitions of one name all receive a link." .

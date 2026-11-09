@@ -23,7 +23,7 @@ pub const TERMS: &[Term4] = &[
     ("cx", "Enum", 'C', "enum", "An enumeration type.", "", ""),
     ("cx", "EnumMember", 'C', "enum member", "An enumerator, in declaration order.", "", ""),
     ("cx", "Typedef", 'C', "typedef", "A type alias (including function-pointer types).", "", ""),
-    ("cx", "Macro", 'C', "macro", "A #define in a header.", "", ""),
+    ("cx", "Macro", 'C', "macro", "A #define, in a header or a source file.", "", ""),
     ("cx", "GlobalVariable", 'C', "global variable", "A file-scope variable definition.", "", ""),
     ("cx", "definedIn", 'O', "defined in", "The file containing the definition.", "", ""),
     ("cx", "declaredIn", 'O', "declared in", "The header containing the prototype.", "", ""),

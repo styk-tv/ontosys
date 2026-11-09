@@ -7,6 +7,7 @@
 
 pub mod engine;
 pub mod join;
+pub mod output;
 pub mod profiles;
 pub mod rdf;
 pub mod scan;

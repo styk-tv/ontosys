@@ -10,6 +10,46 @@ fn int(n: usize) -> Literal {
     Literal::integer(n as i64)
 }
 
+/// `oc:resolvesTo` from each external symbol a C function calls to every
+/// `cx:Macro` of that name. In complexity.nt only: re-pointing `cx:calls`
+/// would move graph.nt for every consumer that pins it.
+pub fn macro_links(
+    project: &str,
+    files: &[crate::lang_c::CFile],
+    ix: &crate::lang_c::rdf::CIndex,
+    out: &mut TripleSet,
+) {
+    use crate::ontology::instance_iri;
+    let mut by_name: std::collections::BTreeMap<&str, Vec<Iri>> = std::collections::BTreeMap::new();
+    for f in files {
+        for m in &f.macros {
+            by_name
+                .entry(m.name.as_str())
+                .or_default()
+                .push(instance_iri(
+                    project,
+                    "macro",
+                    &format!("{}/{}", f.path, m.name),
+                ));
+        }
+    }
+    for f in files {
+        for func in &f.functions {
+            for callee in &func.calls {
+                if ix.resolve_fn(callee, &f.path).is_some() {
+                    continue;
+                }
+                if let Some(macros) = by_name.get(callee.as_str()) {
+                    let sym = instance_iri(project, "sym", callee);
+                    for m in macros {
+                        out.add(Triple::new(sym.clone(), OC.iri("resolvesTo"), m.clone()));
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Tier A facts of one function, on its IRI.
 pub fn tier_a_triples(subject: &Iri, a: &TierA, sha: Option<&str>, out: &mut TripleSet) {
     let mut add = |local: &str, v: Literal| out.add(Triple::new(subject.clone(), OC.iri(local), v));
@@ -88,6 +128,48 @@ mod tests {
                 "{p}: {types:?}"
             );
         }
+    }
+
+    #[test]
+    fn macro_calls_resolve_to_every_same_named_macro() {
+        use crate::lang_c::{extract, new_parser, rdf as crdf};
+        let files = vec![
+            extract(&mut new_parser(), "a.h", "#define M(x) (x)\n", None),
+            extract(&mut new_parser(), "b.h", "#define M(x) ((x) + 1)\n", None),
+            extract(
+                &mut new_parser(),
+                "c.c",
+                "int f(void) { return M(1) + g(); }\nint g(void) { return 0; }\n",
+                None,
+            ),
+        ];
+        let ix = crdf::index("p", &files);
+        let mut cx_out = TripleSet::new();
+        crdf::to_triples("p", &files, &ix, &mut cx_out);
+        let mut links = TripleSet::new();
+        macro_links("p", &files, &ix, &mut links);
+        let nt = links.to_ntriples();
+        let sym = crate::ontology::instance_iri("p", "sym", "M");
+        for path in ["a.h/M", "b.h/M"] {
+            let m = crate::ontology::instance_iri("p", "macro", path);
+            assert!(
+                nt.contains(&format!(
+                    "<{}> <{OC}resolvesTo> <{}>",
+                    sym.as_str(),
+                    m.as_str()
+                )),
+                "{nt}"
+            );
+        }
+        assert_eq!(
+            nt.lines().count(),
+            2,
+            "g resolves to a function, so it gets no macro link: {nt}"
+        );
+        assert!(
+            !cx_out.to_ntriples().contains("resolvesTo"),
+            "graph.nt never carries the links"
+        );
     }
 
     #[test]

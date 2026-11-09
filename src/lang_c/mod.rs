@@ -238,7 +238,7 @@ fn walk_top(node: Node, b: &[u8], original: Option<&[u8]>, file: &mut CFile) {
                     file.includes.insert(t.to_string());
                 }
             }
-            "preproc_def" if file.is_header => {
+            "preproc_def" => {
                 if let Some(n) = ch.child_by_field_name("name") {
                     file.macros.push(CMacro {
                         name: text(n, b).to_string(),
@@ -248,7 +248,7 @@ fn walk_top(node: Node, b: &[u8], original: Option<&[u8]>, file: &mut CFile) {
                     });
                 }
             }
-            "preproc_function_def" if file.is_header => {
+            "preproc_function_def" => {
                 if let Some(n) = ch.child_by_field_name("name") {
                     file.macros.push(CMacro {
                         name: text(n, b).to_string(),
@@ -908,6 +908,13 @@ void labels(int x) { again: x++; if (x < 3) goto again; { int y = x; (void) y; }
                 ("sum_of_primes", 4, 8),
             ]
         );
+    }
+
+    #[test]
+    fn macros_defined_in_c_files_are_extracted() {
+        let f = extract(&mut new_parser(), "x.c", "#define LOCAL(x) ((x) * 2)\n#define LIMIT 10\nint f(int a) { return LOCAL(a); }\n", None);
+        let names: Vec<&str> = f.macros.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, vec!["LIMIT", "LOCAL"]);
     }
 
     #[test]
