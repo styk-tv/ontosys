@@ -297,6 +297,13 @@ pub async fn run(
 
     // complexity.nt: facts that change when *other* code changes (links,
     // call graph, estimates), kept apart so graph.nt's sha stays about the code.
+    // Cost catalog: the shipped one plus this repository's own overlay.
+    let mut catalog = complexity::catalog::shipped();
+    if let Ok(overlay) = fs::read_to_string(ontosys_path.join("cost-catalog.ttl")) {
+        catalog = catalog
+            .with_overlay(&overlay)
+            .map_err(|e| anyhow::anyhow!(".ontosys/cost-catalog.ttl: {e}"))?;
+    }
     let mut complexity_triples = TripleSet::new();
     let mut model = match &c_index {
         Some(ix) => {
@@ -433,6 +440,7 @@ pub async fn run(
         c_parse_error_nodes: c_errors,
         complexity: ComplexityMeta {
             hash_skipped_invalid_utf8: c_files.iter().filter(|f| f.hash_skipped).count(),
+            catalog_version: catalog.version.clone(),
             loops_by_class,
             tier_a: {
                 let mut m: std::collections::BTreeMap<&'static str, complexity::join::AttachStats> =
@@ -671,6 +679,8 @@ struct BuildMetadata {
 struct ComplexityMeta {
     /// C files parsed from a lossy UTF-8 decode, whose functions carry no definition hash.
     hash_skipped_invalid_utf8: usize,
+    /// The cost catalog version (shipped, plus the repository overlay when present).
+    catalog_version: String,
     /// Loops of every analysed function, by bound class.
     loops_by_class: std::collections::BTreeMap<complexity::loops::BoundClass, usize>,
     /// Per grammar: functions analysed, attached to a declaration, and why not.

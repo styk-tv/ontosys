@@ -1,0 +1,311 @@
+# ontosys cost catalog v0: what external operations cost, worst case first.
+#
+# Data, not vocabulary: every term is declared in code.ttl. One entry per
+# (language, operation, receiver type). code:sizeOf says which size the cost
+# grows with ("arg0", "arg1", "receiver", or "output" for the output written);
+# code:iterates says the call runs a callback once per element of that size.
+# JavaScript entries serve TypeScript and TSX. A repository may add entries and
+# size caps in its own .ontosys/cost-catalog.ttl.
+
+@prefix code: <https://ontosys.io/ns/code#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+
+<https://ontosys.io/ns/code/cost-catalog> owl:versionInfo "v0 2026-11-09" .
+
+[ a code:CostEntry ; code:language "c" ; code:operation "strlen" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strnlen" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strchr" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strrchr" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strdup" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strspn" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strcspn" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strpbrk" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strtok" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "atoi" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "atol" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "atoll" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "atof" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strtol" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strtoul" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strtoll" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strtoull" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strtod" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strtof" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "puts" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strcmp" ; code:worstClass code:ON ; code:sizeOf "arg1" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strcoll" ; code:worstClass code:ON ; code:sizeOf "arg1" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strcpy" ; code:worstClass code:ON ; code:sizeOf "arg1" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strcat" ; code:worstClass code:ON ; code:sizeOf "arg1" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strncmp" ; code:worstClass code:ON ; code:sizeOf "arg2" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strncpy" ; code:worstClass code:ON ; code:sizeOf "arg2" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strncat" ; code:worstClass code:ON ; code:sizeOf "arg2" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "memcpy" ; code:worstClass code:ON ; code:sizeOf "arg2" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "memmove" ; code:worstClass code:ON ; code:sizeOf "arg2" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "memset" ; code:worstClass code:ON ; code:sizeOf "arg2" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "memcmp" ; code:worstClass code:ON ; code:sizeOf "arg2" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "memchr" ; code:worstClass code:ON ; code:sizeOf "arg2" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strndup" ; code:worstClass code:ON ; code:sizeOf "arg1" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "strstr" ; code:worstClass code:ON2 ; code:averageClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library (naive search is O(n*m); two-way search is linear)" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "qsort" ; code:worstClass code:ON2 ; code:averageClass code:ONLogN ; code:sizeOf "arg1" ; code:source "ISO C standard library (unspecified algorithm; quicksort is O(n^2) worst)" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "bsearch" ; code:worstClass code:OLogN ; code:sizeOf "arg2" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "calloc" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "realloc" ; code:worstClass code:ON ; code:amortizedClass code:O1 ; code:sizeOf "arg1" ; code:source "ISO C standard library (may copy the block)" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "malloc" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "free" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "abs" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "labs" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "llabs" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "toupper" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "tolower" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "isalpha" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "isdigit" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "isspace" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "isalnum" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "isupper" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "islower" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "isxdigit" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "isprint" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "ispunct" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "iscntrl" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "isgraph" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "rand" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "srand" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "exit" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "abort" ; code:worstClass code:O1 ; code:source "ISO C standard library" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "printf" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "ISO C standard library (linear in the output written)" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "fprintf" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "ISO C standard library (linear in the output written)" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "sprintf" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "ISO C standard library (linear in the output written)" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "snprintf" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "ISO C standard library (linear in the output written)" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "vprintf" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "ISO C standard library (linear in the output written)" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "vfprintf" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "ISO C standard library (linear in the output written)" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "vsprintf" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "ISO C standard library (linear in the output written)" ] .
+[ a code:CostEntry ; code:language "c" ; code:operation "vsnprintf" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "ISO C standard library (linear in the output written)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "len" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "abs" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "isinstance" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "issubclass" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "id" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "hash" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "type" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "callable" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "chr" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "ord" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "bool" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "range" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "enumerate" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "zip" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "reversed" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "iter" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "next" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "map" ; code:worstClass code:O1 ; code:iterates "arg1" ; code:source "Python language reference and CPython TimeComplexity notes (lazy; the callback runs when consumed)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "filter" ; code:worstClass code:O1 ; code:iterates "arg1" ; code:source "Python language reference and CPython TimeComplexity notes (lazy; the callback runs when consumed)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "min" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "max" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "sum" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "any" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "all" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "list" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "tuple" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "set" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "frozenset" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "dict" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "str" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "repr" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "bytes" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "bytearray" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "sorted" ; code:worstClass code:ONLogN ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes (Timsort)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "print" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "append" ; code:receiverType "list" ; code:worstClass code:ON ; code:amortizedClass code:O1 ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "pop" ; code:receiverType "list" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes (O(1) at the end, O(n) elsewhere)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "insert" ; code:receiverType "list" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "remove" ; code:receiverType "list" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "index" ; code:receiverType "list" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "count" ; code:receiverType "list" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "reverse" ; code:receiverType "list" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "copy" ; code:receiverType "list" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "clear" ; code:receiverType "list" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "extend" ; code:receiverType "list" ; code:worstClass code:ON ; code:amortizedClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "sort" ; code:receiverType "list" ; code:worstClass code:ONLogN ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes (Timsort)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "__contains__" ; code:receiverType "list" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "__contains__" ; code:receiverType "dict" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes (hash table: O(1) average)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "get" ; code:receiverType "dict" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes (hash table: O(1) average)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "setdefault" ; code:receiverType "dict" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes (hash table: O(1) average)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "pop" ; code:receiverType "dict" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes (hash table: O(1) average)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "keys" ; code:receiverType "dict" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes (views)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "values" ; code:receiverType "dict" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes (views)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "items" ; code:receiverType "dict" ; code:worstClass code:O1 ; code:source "Python language reference and CPython TimeComplexity notes (views)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "update" ; code:receiverType "dict" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "__contains__" ; code:receiverType "set" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes (hash table: O(1) average)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "add" ; code:receiverType "set" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes (hash table: O(1) average)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "discard" ; code:receiverType "set" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes (hash table: O(1) average)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "remove" ; code:receiverType "set" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes (hash table: O(1) average)" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "union" ; code:receiverType "set" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "intersection" ; code:receiverType "set" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "difference" ; code:receiverType "set" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "__contains__" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "find" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "index" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "count" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "replace" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "split" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "strip" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "lower" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "upper" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "startswith" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "endswith" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "encode" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "python" ; code:operation "join" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "Python language reference and CPython TimeComplexity notes" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "len" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "is_empty" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "iter" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "iter_mut" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "into_iter" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "first" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "last" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "get" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "swap" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "capacity" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "push" ; code:receiverType "Vec" ; code:worstClass code:ON ; code:amortizedClass code:O1 ; code:sizeOf "receiver" ; code:source "Rust standard library documentation (amortized O(1))" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "pop" ; code:receiverType "Vec" ; code:worstClass code:O1 ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "insert" ; code:receiverType "Vec" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "remove" ; code:receiverType "Vec" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "contains" ; code:receiverType "Vec" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "dedup" ; code:receiverType "Vec" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "retain" ; code:receiverType "Vec" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "clear" ; code:receiverType "Vec" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "truncate" ; code:receiverType "Vec" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "reverse" ; code:receiverType "Vec" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "clone" ; code:receiverType "Vec" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "to_vec" ; code:receiverType "Vec" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "join" ; code:receiverType "Vec" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "concat" ; code:receiverType "Vec" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "extend" ; code:receiverType "Vec" ; code:worstClass code:ON ; code:amortizedClass code:ON ; code:sizeOf "arg0" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "extend_from_slice" ; code:receiverType "Vec" ; code:worstClass code:ON ; code:amortizedClass code:ON ; code:sizeOf "arg0" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "append" ; code:receiverType "Vec" ; code:worstClass code:ON ; code:amortizedClass code:ON ; code:sizeOf "arg0" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "sort" ; code:worstClass code:ONLogN ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "sort_by" ; code:worstClass code:ONLogN ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "sort_by_key" ; code:worstClass code:ONLogN ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "sort_unstable" ; code:worstClass code:ONLogN ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "sort_unstable_by" ; code:worstClass code:ONLogN ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "sort_unstable_by_key" ; code:worstClass code:ONLogN ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "binary_search" ; code:worstClass code:OLogN ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "binary_search_by" ; code:worstClass code:OLogN ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "binary_search_by_key" ; code:worstClass code:OLogN ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "contains_key" ; code:receiverType "HashMap" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Rust standard library documentation (hash map: O(1) average)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "entry" ; code:receiverType "HashMap" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Rust standard library documentation (hash map: O(1) average)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "range" ; code:receiverType "BTreeMap" ; code:worstClass code:OLogN ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "push_str" ; code:receiverType "String" ; code:worstClass code:ON ; code:amortizedClass code:ON ; code:sizeOf "arg0" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "to_string" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "to_owned" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "to_lowercase" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "to_uppercase" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "trim" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "split" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "chars" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "bytes" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "lines" ; code:receiverType "str" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "map" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "Rust standard library documentation (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "filter" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "Rust standard library documentation (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "filter_map" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "Rust standard library documentation (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "flat_map" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "Rust standard library documentation (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "take_while" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "Rust standard library documentation (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "skip_while" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "Rust standard library documentation (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "inspect" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "Rust standard library documentation (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "for_each" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "Rust standard library documentation (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "fold" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "Rust standard library documentation (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "any" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "Rust standard library documentation (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "all" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "Rust standard library documentation (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "find" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "Rust standard library documentation (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "position" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "Rust standard library documentation (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "find_map" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "Rust standard library documentation (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "map_while" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "Rust standard library documentation (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "scan" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "Rust standard library documentation (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "collect" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation (consumes the iterator)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "sum" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation (consumes the iterator)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "product" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation (consumes the iterator)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "count" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation (consumes the iterator)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "max" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation (consumes the iterator)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "min" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation (consumes the iterator)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "last" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation (consumes the iterator)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "nth" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "Rust standard library documentation (consumes the iterator)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "format" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "pop" ; code:receiverType "Array" ; code:worstClass code:O1 ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "at" ; code:receiverType "Array" ; code:worstClass code:O1 ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "length" ; code:receiverType "Array" ; code:worstClass code:O1 ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "push" ; code:receiverType "Array" ; code:worstClass code:ON ; code:amortizedClass code:O1 ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes (amortized O(1))" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "shift" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "unshift" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "includes" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "indexOf" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "lastIndexOf" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "slice" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "splice" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "concat" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "join" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "reverse" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "fill" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "copyWithin" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "flat" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "keys" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "values" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "entries" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "forEach" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "ECMAScript specification and V8 notes (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "map" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "ECMAScript specification and V8 notes (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "filter" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "ECMAScript specification and V8 notes (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "reduce" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "ECMAScript specification and V8 notes (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "reduceRight" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "ECMAScript specification and V8 notes (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "some" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "ECMAScript specification and V8 notes (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "every" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "ECMAScript specification and V8 notes (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "find" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "ECMAScript specification and V8 notes (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "findIndex" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "ECMAScript specification and V8 notes (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "findLast" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "ECMAScript specification and V8 notes (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "findLastIndex" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "ECMAScript specification and V8 notes (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "flatMap" ; code:receiverType "Array" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:iterates "receiver" ; code:source "ECMAScript specification and V8 notes (the callback runs per element)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "sort" ; code:receiverType "Array" ; code:worstClass code:ONLogN ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes (TimSort in V8)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "get" ; code:receiverType "Map" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes (hash table: O(1) average)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "set" ; code:receiverType "Map" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes (hash table: O(1) average)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "has" ; code:receiverType "Map" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes (hash table: O(1) average)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "delete" ; code:receiverType "Map" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes (hash table: O(1) average)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "add" ; code:receiverType "Map" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes (hash table: O(1) average)" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "includes" ; code:receiverType "String" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "indexOf" ; code:receiverType "String" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "split" ; code:receiverType "String" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "replace" ; code:receiverType "String" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "replaceAll" ; code:receiverType "String" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "toLowerCase" ; code:receiverType "String" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "toUpperCase" ; code:receiverType "String" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "trim" ; code:receiverType "String" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "startsWith" ; code:receiverType "String" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "endsWith" ; code:receiverType "String" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "padStart" ; code:receiverType "String" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "padEnd" ; code:receiverType "String" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "repeat" ; code:receiverType "String" ; code:worstClass code:ON ; code:sizeOf "receiver" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "parse" ; code:receiverType "JSON" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "stringify" ; code:receiverType "JSON" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "keys" ; code:receiverType "Object" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "values" ; code:receiverType "Object" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "entries" ; code:receiverType "Object" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "assign" ; code:receiverType "Object" ; code:worstClass code:ON ; code:sizeOf "arg0" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "log" ; code:receiverType "console" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "error" ; code:receiverType "console" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "warn" ; code:receiverType "console" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "info" ; code:receiverType "console" ; code:worstClass code:ON ; code:sizeOf "output" ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "isArray" ; code:worstClass code:O1 ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "isInteger" ; code:worstClass code:O1 ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "isNaN" ; code:worstClass code:O1 ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "parseInt" ; code:worstClass code:O1 ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "parseFloat" ; code:worstClass code:O1 ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "floor" ; code:worstClass code:O1 ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "ceil" ; code:worstClass code:O1 ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "round" ; code:worstClass code:O1 ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "abs" ; code:worstClass code:O1 ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "sqrt" ; code:worstClass code:O1 ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "javascript" ; code:operation "random" ; code:worstClass code:O1 ; code:source "ECMAScript specification and V8 notes" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "get" ; code:receiverType "HashMap" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Rust standard library documentation (hash map: O(1) average)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "get" ; code:receiverType "BTreeMap" ; code:worstClass code:OLogN ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "get_mut" ; code:receiverType "HashMap" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Rust standard library documentation (hash map: O(1) average)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "get_mut" ; code:receiverType "BTreeMap" ; code:worstClass code:OLogN ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "insert" ; code:receiverType "HashMap" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Rust standard library documentation (hash map: O(1) average)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "insert" ; code:receiverType "BTreeMap" ; code:worstClass code:OLogN ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "remove" ; code:receiverType "HashMap" ; code:worstClass code:ON ; code:averageClass code:O1 ; code:sizeOf "receiver" ; code:source "Rust standard library documentation (hash map: O(1) average)" ] .
+[ a code:CostEntry ; code:language "rust" ; code:operation "remove" ; code:receiverType "BTreeMap" ; code:worstClass code:OLogN ; code:sizeOf "receiver" ; code:source "Rust standard library documentation" ] .

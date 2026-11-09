@@ -103,3 +103,38 @@ code:definitionCount a owl:DatatypeProperty ;
     rdfs:label "definition count" ;
     rdfs:comment "Definitions that share this function's IRI (C #ifdef alternatives, until identity carries an ordinal). Stated only when more than 1." ;
     rdfs:range xsd:integer .
+
+# ---- Cost catalog (ontology/cost-catalog.ttl, and a repository's .ontosys/cost-catalog.ttl)
+
+code:CostEntry a owl:Class ;
+    rdfs:label "cost entry" ;
+    rdfs:comment "What one external operation costs, in one language, for one receiver type." .
+
+code:SizeCap a owl:Class ;
+    rdfs:label "size cap" ;
+    rdfs:comment "A repository's statement that a size never exceeds a constant (npos is capped by MAXNUMPOS)." .
+
+code:GrowthClass a owl:Class ;
+    rdfs:label "growth class" ;
+    rdfs:comment "One class of the closed set an estimate rounds up into." .
+
+code:O1 a owl:NamedIndividual, code:GrowthClass ; rdfs:label "O(1)" .
+code:OLogN a owl:NamedIndividual, code:GrowthClass ; rdfs:label "O(log n)" .
+code:ON a owl:NamedIndividual, code:GrowthClass ; rdfs:label "O(n)" .
+code:ONLogN a owl:NamedIndividual, code:GrowthClass ; rdfs:label "O(n log n)" .
+code:ON2 a owl:NamedIndividual, code:GrowthClass ; rdfs:label "O(n^2)" .
+code:ON3 a owl:NamedIndividual, code:GrowthClass ; rdfs:label "O(n^3)" .
+code:ONK a owl:NamedIndividual, code:GrowthClass ; rdfs:label "O(n^k)" ; rdfs:comment "Polynomial of degree 4 or more; code:degree gives k." .
+code:OExp a owl:NamedIndividual, code:GrowthClass ; rdfs:label "O(b^n)" ; rdfs:comment "Exponential; code:base gives b." .
+
+code:language a owl:DatatypeProperty ; rdfs:label "language" ; rdfs:comment "c, rust, python or javascript (which also serves TypeScript and TSX)." ; rdfs:range xsd:string .
+code:operation a owl:DatatypeProperty ; rdfs:label "operation" ; rdfs:comment "The called name (function, method or operator such as __contains__)." ; rdfs:range xsd:string .
+code:receiverType a owl:DatatypeProperty ; rdfs:label "receiver type" ; rdfs:comment "The type a method belongs to, when the cost depends on it." ; rdfs:range xsd:string .
+code:worstClass a owl:ObjectProperty ; rdfs:label "worst class" ; rdfs:comment "Worst-case growth: what estimates use." .
+code:averageClass a owl:ObjectProperty ; rdfs:label "average class" ; rdfs:comment "Average growth, where it differs; recorded as an assumption, never used as a bound." .
+code:amortizedClass a owl:ObjectProperty ; rdfs:label "amortized class" ; rdfs:comment "Amortized growth, where it differs; recorded as an assumption, never used as a bound." .
+code:sizeOf a owl:DatatypeProperty ; rdfs:label "size of" ; rdfs:comment "Which size the cost grows with: arg0, arg1, ..., receiver, or output (the output written)." ; rdfs:range xsd:string .
+code:iterates a owl:DatatypeProperty ; rdfs:label "iterates" ; rdfs:comment "The call runs its callback once per element of this size (receiver or argN)." ; rdfs:range xsd:string .
+code:source a owl:DatatypeProperty ; rdfs:label "source" ; rdfs:comment "Where the cost comes from (the language or library documentation, or who read the code)." ; rdfs:range xsd:string .
+code:sizeName a owl:DatatypeProperty ; rdfs:label "size name" ; rdfs:comment "A size expression as written in code." ; rdfs:range xsd:string .
+code:cappedBy a owl:DatatypeProperty ; rdfs:label "capped by" ; rdfs:comment "The constant that caps the named size." ; rdfs:range xsd:string .
