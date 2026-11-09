@@ -59,3 +59,47 @@ code:definitionSha256 a owl:DatatypeProperty ;
 code:resolvesTo a owl:ObjectProperty ;
     rdfs:label "resolves to" ;
     rdfs:comment "From a called name that resolves to no function (a cx:ExternalSymbol) to each macro definition of that name. Several definitions of one name all receive a link." .
+
+# ---- Tier B: relationships between functions (complexity.nt) ----------------
+
+code:AnalysedFunction a owl:Class ;
+    rdfs:label "analysed function" ;
+    rdfs:comment "A function complexity.nt describes. Typed in complexity.nt itself, so the file validates without graph.nt." .
+
+code:CallCycle a owl:Class ;
+    rdfs:label "call cycle" ;
+    rdfs:comment "A strongly connected component of the call graph with more than one function (indirect recursion). Its IRI is derived from its sorted member IRIs." .
+
+code:fanIn a owl:DatatypeProperty ;
+    rdfs:label "fan-in" ;
+    rdfs:comment "Distinct repository functions that call this one (itself excluded)." ;
+    rdfs:range xsd:integer .
+
+code:fanOut a owl:DatatypeProperty ;
+    rdfs:label "fan-out" ;
+    rdfs:comment "Distinct repository functions this one calls (itself excluded)." ;
+    rdfs:range xsd:integer .
+
+code:externalCallCount a owl:DatatypeProperty ;
+    rdfs:label "external call count" ;
+    rdfs:comment "Distinct callees that resolve to no single repository function: external names, macros, ambiguous names and indirect calls." ;
+    rdfs:range xsd:integer .
+
+code:transitiveLoopDepth a owl:DatatypeProperty ;
+    rdfs:label "transitive loop depth" ;
+    rdfs:comment "Loop depth through repository calls: the maximum, over the body, of the loops around a call plus the callee's own value. External and macro callees count as 0. Absent for recursion, call cycles and indirect calls." ;
+    rdfs:range xsd:integer .
+
+code:inCallCycle a owl:ObjectProperty ;
+    rdfs:label "in call cycle" ;
+    rdfs:comment "The call cycle this function belongs to." .
+
+code:memberCount a owl:DatatypeProperty ;
+    rdfs:label "member count" ;
+    rdfs:comment "Functions in a call cycle." ;
+    rdfs:range xsd:integer .
+
+code:definitionCount a owl:DatatypeProperty ;
+    rdfs:label "definition count" ;
+    rdfs:comment "Definitions that share this function's IRI (C #ifdef alternatives, until identity carries an ordinal). Stated only when more than 1." ;
+    rdfs:range xsd:integer .

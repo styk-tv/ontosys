@@ -7,10 +7,12 @@
 
 pub mod engine;
 pub mod join;
+pub mod model;
 pub mod output;
 pub mod profiles;
 pub mod rdf;
 pub mod scan;
+pub mod tier_b;
 
 use engine::Profile;
 

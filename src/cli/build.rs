@@ -298,9 +298,16 @@ pub async fn run(
     // complexity.nt: facts that change when *other* code changes (links,
     // call graph, estimates), kept apart so graph.nt's sha stays about the code.
     let mut complexity_triples = TripleSet::new();
-    if let Some(ix) = &c_index {
-        complexity::rdf::macro_links(project_id, &c_files, ix, &mut complexity_triples);
-    }
+    let mut model = match &c_index {
+        Some(ix) => {
+            complexity::rdf::macro_links(project_id, &c_files, ix, &mut complexity_triples);
+            complexity::model::model_from_c(project_id, &c_files, ix)
+        }
+        None => complexity::model::Model::default(),
+    };
+    complexity::model::model_add_scanned(&mut model, attached);
+    let (tier_b, call_cycles) = complexity::tier_b::tier_b(&model);
+    complexity::rdf::tier_b_triples(project_id, &model, &tier_b, &call_cycles, &mut complexity_triples);
     if config.redact_emails {
         complexity_triples = redact_triples(complexity_triples);
     }

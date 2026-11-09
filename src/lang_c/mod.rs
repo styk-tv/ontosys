@@ -641,6 +641,8 @@ fn name_node(n: Node) -> Option<Node> {
     loop {
         match cur.kind() {
             "identifier" | "field_identifier" | "type_identifier" => return Some(cur),
+            // `(*name)` in a function-pointer declarator has no field name
+            "parenthesized_declarator" => cur = cur.named_child(0)?,
             _ => cur = cur.child_by_field_name("declarator")?,
         }
     }
@@ -908,6 +910,13 @@ void labels(int x) { again: x++; if (x < 3) goto again; { int y = x; (void) y; }
                 ("sum_of_primes", 4, 8),
             ]
         );
+    }
+
+    #[test]
+    fn function_pointer_parameters_keep_their_names() {
+        let f = extract(&mut new_parser(), "x.c", "int apply(int (*cmp)(int), int x) { return cmp(x); }\n", None);
+        let names: Vec<&str> = f.functions[0].params.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, vec!["cmp", "x"]);
     }
 
     #[test]

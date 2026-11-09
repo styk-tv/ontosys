@@ -50,6 +50,61 @@ pub fn macro_links(
     }
 }
 
+/// Tier B facts, in complexity.nt. Every function described there is typed
+/// `oc:AnalysedFunction` there too, so the file validates on its own.
+pub fn tier_b_triples(
+    project: &str,
+    m: &super::model::Model,
+    tb: &[super::tier_b::TierB],
+    cycles: &[Vec<usize>],
+    out: &mut TripleSet,
+) {
+    let cycle_iris: Vec<Iri> = cycles
+        .iter()
+        .map(|c| super::tier_b::cycle_iri(project, m, c))
+        .collect();
+    for (f, b) in m.fns.iter().zip(tb) {
+        let s = &f.iri;
+        out.add(Triple::type_of(s.clone(), OC.iri("AnalysedFunction")));
+        out.add(Triple::new(s.clone(), OC.iri("fanIn"), int(b.fan_in)));
+        out.add(Triple::new(s.clone(), OC.iri("fanOut"), int(b.fan_out)));
+        out.add(Triple::new(
+            s.clone(),
+            OC.iri("externalCallCount"),
+            int(b.external_calls),
+        ));
+        if let Some(d) = b.transitive_loop_depth {
+            out.add(Triple::new(
+                s.clone(),
+                OC.iri("transitiveLoopDepth"),
+                int(d as usize),
+            ));
+        }
+        if let Some(k) = b.cycle {
+            out.add(Triple::new(
+                s.clone(),
+                OC.iri("inCallCycle"),
+                cycle_iris[k].clone(),
+            ));
+        }
+        if f.defs.len() > 1 {
+            out.add(Triple::new(
+                s.clone(),
+                OC.iri("definitionCount"),
+                int(f.defs.len()),
+            ));
+        }
+    }
+    for (iri, c) in cycle_iris.iter().zip(cycles) {
+        out.add(Triple::type_of(iri.clone(), OC.iri("CallCycle")));
+        out.add(Triple::new(
+            iri.clone(),
+            OC.iri("memberCount"),
+            int(c.len()),
+        ));
+    }
+}
+
 /// Tier A facts of one function, on its IRI.
 pub fn tier_a_triples(subject: &Iri, a: &TierA, sha: Option<&str>, out: &mut TripleSet) {
     let mut add = |local: &str, v: Literal| out.add(Triple::new(subject.clone(), OC.iri(local), v));
@@ -170,6 +225,67 @@ mod tests {
             !cx_out.to_ntriples().contains("resolvesTo"),
             "graph.nt never carries the links"
         );
+    }
+
+    #[test]
+    fn complexity_nt_validates_alone() {
+        use crate::complexity::model::Target::*;
+        use crate::complexity::tier_b::{tests::model, tier_b};
+        let m = model(&[
+            ("x", 1, vec![("y", 0, Repo(1))]),
+            ("y", 0, vec![("x", 0, Repo(0))]),
+            ("z", 2, vec![("x", 1, Repo(0))]),
+        ]);
+        let (tb, cycles) = tier_b(&m);
+        let mut out = TripleSet::new();
+        tier_b_triples("p", &m, &tb, &cycles, &mut out);
+        let mut typed: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut described: BTreeSet<String> = BTreeSet::new();
+        for t in out.iter() {
+            let s = match &t.subject {
+                crate::ontology::Term::Iri(i) => i.as_str().to_string(),
+                _ => panic!("no blank nodes"),
+            };
+            if t.predicate.as_str() == RDF_TYPE {
+                if let crate::ontology::Term::Iri(o) = &t.object {
+                    typed.entry(s).or_default().insert(o.as_str().to_string());
+                }
+            } else {
+                described.insert(s);
+            }
+        }
+        let targeted = described
+            .iter()
+            .filter(|s| {
+                typed.get(*s).is_some_and(|t| {
+                    t.contains(&format!("{OC}AnalysedFunction"))
+                        || t.contains(&format!("{OC}CallCycle"))
+                })
+            })
+            .count();
+        assert_eq!(
+            targeted,
+            described.len(),
+            "every described node is typed in the same file"
+        );
+        assert_eq!(targeted, 4, "three functions and one cycle");
+        let decl = declarations();
+        for t in out.iter() {
+            for iri in [
+                t.predicate.as_str().to_string(),
+                match &t.object {
+                    crate::ontology::Term::Iri(i) => i.as_str().to_string(),
+                    _ => String::new(),
+                },
+            ] {
+                if iri.starts_with(OC) {
+                    assert!(
+                        decl.contains_key(&iri),
+                        "{iri} not declared in ontology/code.ttl"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

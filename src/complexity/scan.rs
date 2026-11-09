@@ -14,6 +14,8 @@ use tree_sitter::{Node, Parser};
 #[derive(Debug, Clone)]
 pub struct FunctionFacts {
     pub name: String,
+    /// Repository-relative path of the file.
+    pub file: String,
     /// 1-based line of the function's name (not of its first byte).
     pub name_line: usize,
     pub grammar: Grammar,
@@ -24,7 +26,7 @@ pub struct FunctionFacts {
 /// Facts for every named function with a body, in document order, and the
 /// file's error nodes. The file is parsed from its bytes, so every hash is
 /// over the bytes as they are.
-pub fn scan_file(_rel_path: &str, bytes: &[u8], grammar: Grammar) -> (Vec<FunctionFacts>, usize) {
+pub fn scan_file(rel_path: &str, bytes: &[u8], grammar: Grammar) -> (Vec<FunctionFacts>, usize) {
     let (Some(lang), Some(profile)) = (grammar.language(), grammar.profile()) else {
         return (Vec::new(), 0);
     };
@@ -50,6 +52,7 @@ pub fn scan_file(_rel_path: &str, bytes: &[u8], grammar: Grammar) -> (Vec<Functi
                 tier_a: analyze(body, bytes, &name, profile),
                 definition_sha256: Some(definition_sha256(def, bytes, profile)),
                 name_line: name_node.start_position().row + 1,
+                file: rel_path.to_string(),
                 name,
                 grammar,
             });
