@@ -19,6 +19,7 @@
 //! ```
 
 mod capabilities;
+mod complexity;
 mod graph;
 mod grounding;
 mod lang_c;

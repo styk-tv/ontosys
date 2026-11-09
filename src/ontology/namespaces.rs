@@ -118,6 +118,12 @@ pub const CX: Namespace = Namespace::new(
 
 
 
+/// Complexity and other language-neutral code terms (ontology/code.ttl)
+pub const OC: Namespace = Namespace::new(
+    "https://ontosys.io/ns/code#",
+    "oc",
+);
+
 /// Base for version-independent instance IRIs.
 ///
 /// Instance IRIs are built from the project name and a repository-relative
@@ -153,7 +159,7 @@ pub fn iri_segment(s: &str) -> String {
 }
 
 /// Every namespace the serializers know a prefix for.
-pub const ALL_PREFIXES: &[&Namespace] = &[&RDF, &RDFS, &OWL, &XSD, &DC, &DCT, &PROV, &DOAP, &CO, &CODE, &DATA, &CX];
+pub const ALL_PREFIXES: &[&Namespace] = &[&RDF, &RDFS, &OWL, &XSD, &DC, &DCT, &PROV, &DOAP, &CO, &CODE, &DATA, &CX, &OC];
 
 // ============================================================================
 // COMMON IRIs

@@ -308,6 +308,7 @@ fn function_triples(project: &str, f: &CFile, func: &CFunction, ix: &CIndex, out
     out.add(Triple::new(fi.clone(), cx("bodyHash"), lit(&func.body_hash)));
     out.add(Triple::new(fi.clone(), cx("statementCount"), int(func.statements)));
     out.add(Triple::new(fi.clone(), cx("complexity"), int(func.complexity)));
+    crate::complexity::rdf::tier_a_triples(&fi, &func.tier_a, func.definition_sha256.as_deref(), out);
     if let Some(c) = &func.comment {
         out.add(Triple::new(fi.clone(), rdfs::comment(), lit(c)));
     }
@@ -388,6 +389,24 @@ mod tests {
         assert_eq!(near, vec!["lib/a/p.c"]);
         let all: Vec<&str> = ix.global_defs("p", "include/p.h").iter().map(|d| d.path.as_str()).collect();
         assert_eq!(all, vec!["lib/a/p.c", "tools/p.c"], "no shared directory: every definition");
+    }
+
+    #[test]
+    fn c_functions_carry_tier_a_triples() {
+        let src = "int fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }\n";
+        let file = crate::lang_c::extract(&mut crate::lang_c::new_parser(), "m.c", src, None);
+        let files = vec![file];
+        let ix = index("p", &files);
+        let mut out = TripleSet::new();
+        to_triples("p", &files, &ix, &mut out);
+        let nt = out.to_ntriples();
+        let f = fn_iri("p", "m.c", "fact");
+        let has = |local: &str, obj: &str| nt.contains(&format!("<{}> <https://ontosys.io/ns/code#{}> {}", f.as_str(), local, obj));
+        assert!(has("cyclomatic", "\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>"), "{nt}");
+        assert!(has("cognitive", "\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>"));
+        assert!(has("selfCalls", "\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>"));
+        assert!(nt.contains(&format!("<{}> <https://ontosys.io/ns/code#definitionSha256> \"", f.as_str())));
+        assert!(nt.contains(&format!("<{}> <https://ontosys.io/ns/c#complexity> \"2\"", f.as_str())), "cx:complexity stays");
     }
 
     #[test]

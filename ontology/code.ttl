@@ -1,0 +1,55 @@
+# ontosys code vocabulary: language-neutral terms for code structure and complexity.
+#
+# Declares terms of https://ontosys.io/ns/code# only. Properties carry no
+# rdfs:domain, so using one never types its subject as anything.
+
+@prefix code: <https://ontosys.io/ns/code#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+<https://ontosys.io/ns/code> a owl:Ontology ;
+    rdfs:label "ontosys code vocabulary" ;
+    owl:versionInfo "0.9.0" .
+
+# ---- Tier A: structure of one function's own text (facts) ------------------
+
+code:statementCount a owl:DatatypeProperty ;
+    rdfs:label "statement count" ;
+    rdfs:comment "Statements in the function body." ;
+    rdfs:range xsd:integer .
+
+code:cyclomatic a owl:DatatypeProperty ;
+    rdfs:label "cyclomatic complexity" ;
+    rdfs:comment "1 + decision points (McCabe). The decision points per language are fixed by ontosys." ;
+    rdfs:range xsd:integer .
+
+code:cognitive a owl:DatatypeProperty ;
+    rdfs:label "cognitive complexity" ;
+    rdfs:comment "Cognitive complexity: +1 per break in linear flow, plus the nesting level for nested structures, +1 per sequence of like boolean operators, +1 for recursion." ;
+    rdfs:range xsd:integer .
+
+code:maxNesting a owl:DatatypeProperty ;
+    rdfs:label "maximum nesting" ;
+    rdfs:comment "Deepest nesting of control structures (anonymous functions not counted)." ;
+    rdfs:range xsd:integer .
+
+code:loopCount a owl:DatatypeProperty ;
+    rdfs:label "loop count" ;
+    rdfs:comment "Loops in the body, of any bound." ;
+    rdfs:range xsd:integer .
+
+code:maxLoopNesting a owl:DatatypeProperty ;
+    rdfs:label "maximum loop nesting" ;
+    rdfs:comment "Deepest nesting of loops inside loops." ;
+    rdfs:range xsd:integer .
+
+code:selfCalls a owl:DatatypeProperty ;
+    rdfs:label "self calls" ;
+    rdfs:comment "Calls the body makes to the function itself (direct recursion)." ;
+    rdfs:range xsd:integer .
+
+code:definitionSha256 a owl:DatatypeProperty ;
+    rdfs:label "definition sha256" ;
+    rdfs:comment "sha256 (lowercase hex) of the definition's bytes exactly as in the file: from its first attached decorator or attribute (else its first byte) to its last byte; leading doc comments excluded; no normalisation. Absent when the file is not valid UTF-8." ;
+    rdfs:range xsd:string .

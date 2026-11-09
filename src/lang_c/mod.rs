@@ -25,6 +25,9 @@ pub struct CFile {
     /// Repository-relative path with `/` separators
     pub path: String,
     pub is_header: bool,
+    /// The text parsed is not the file's exact bytes (the file is not valid
+    /// UTF-8), so its functions carry no definition hash.
+    pub hash_skipped: bool,
     /// Raw text of the comment that opens the file, if any
     pub header_comment: Option<String>,
     pub includes: BTreeSet<String>,
@@ -71,6 +74,11 @@ pub struct CFunction {
     pub type_refs: BTreeSet<String>,
     /// (callee, argument index, identifier) for arguments that are bare identifiers
     pub call_args: BTreeSet<(String, usize, String)>,
+    /// Structure, call sites and loop sites from the complexity engine.
+    pub tier_a: crate::complexity::engine::TierA,
+    /// sha256 of the definition's bytes as they are in the file; None when
+    /// the parsed text is not the file's exact bytes.
+    pub definition_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -136,8 +144,16 @@ pub fn new_parser() -> Parser {
     p
 }
 
-/// Parse one C file into the language-level model.
+/// Parse one C file into the language-level model. `raw` must be the file's
+/// exact bytes; see [`extract_with`] for text decoded lossily.
 pub fn extract(parser: &mut Parser, rel_path: &str, raw: &str, macros: Option<&prepass::MacroLists>) -> CFile {
+    extract_with(parser, rel_path, raw, macros, true)
+}
+
+/// As [`extract`]; `exact` says whether `raw` is the file's bytes unchanged
+/// (false after a lossy UTF-8 decode, and then no definition is hashed).
+pub fn extract_with(parser: &mut Parser, rel_path: &str, raw: &str, macros: Option<&prepass::MacroLists>, exact: bool) -> CFile {
+    let original: Option<&[u8]> = exact.then_some(raw.as_bytes());
     let src_owned;
     let src: &str = match macros {
         Some(lists) => {
@@ -150,6 +166,7 @@ pub fn extract(parser: &mut Parser, rel_path: &str, raw: &str, macros: Option<&p
     let mut file = CFile {
         path: rel_path.to_string(),
         is_header: rel_path.ends_with(".h"),
+        hash_skipped: !exact,
         ..Default::default()
     };
     let Some(mut tree) = parser.parse(src, None) else {
@@ -187,7 +204,7 @@ pub fn extract(parser: &mut Parser, rel_path: &str, raw: &str, macros: Option<&p
         }
     }
 
-    walk_top(root, b, &mut file);
+    walk_top(root, b, original, &mut file);
     collect_types(root, b, &mut file);
 
     file.functions.sort_by(|a, b| a.name.cmp(&b.name).then(a.start_line.cmp(&b.start_line)));
@@ -204,13 +221,13 @@ pub fn extract(parser: &mut Parser, rel_path: &str, raw: &str, macros: Option<&p
 // Top level
 // ----------------------------------------------------------------------------
 
-fn walk_top(node: Node, b: &[u8], file: &mut CFile) {
+fn walk_top(node: Node, b: &[u8], original: Option<&[u8]>, file: &mut CFile) {
     let mut c = node.walk();
     let children: Vec<Node> = node.named_children(&mut c).collect();
     for ch in children {
         match ch.kind() {
             "function_definition" => {
-                if let Some(f) = function(ch, b) {
+                if let Some(f) = function(ch, b, original) {
                     file.functions.push(f);
                 }
             }
@@ -243,7 +260,7 @@ fn walk_top(node: Node, b: &[u8], file: &mut CFile) {
             }
             "expression_statement" => top_level_call(ch, b, file),
             "preproc_ifdef" | "preproc_if" | "preproc_else" | "preproc_elif" | "preproc_elifdef"
-            | "linkage_specification" | "declaration_list" | "ERROR" => walk_top(ch, b, file),
+            | "linkage_specification" | "declaration_list" | "ERROR" => walk_top(ch, b, original, file),
             _ => {}
         }
     }
@@ -316,7 +333,7 @@ fn declaration(node: Node, b: &[u8], file: &mut CFile) {
 // Functions
 // ----------------------------------------------------------------------------
 
-fn function(node: Node, b: &[u8]) -> Option<CFunction> {
+fn function(node: Node, b: &[u8], original: Option<&[u8]>) -> Option<CFunction> {
     let mut d = node.child_by_field_name("declarator")?;
     while d.kind() != "function_declarator" {
         d = d.child_by_field_name("declarator")?;
@@ -377,6 +394,8 @@ fn function(node: Node, b: &[u8]) -> Option<CFunction> {
     if let Some(body) = node.child_by_field_name("body") {
         analyze_body(body, b, &mut f);
     }
+    // The prepass keeps every byte offset, so the span is cut from the file.
+    f.definition_sha256 = original.map(|o| crate::complexity::engine::definition_sha256(node, o, &crate::complexity::profiles::c::C));
     Some(f)
 }
 
@@ -401,28 +420,19 @@ fn analyze_body(body: Node, b: &[u8], f: &mut CFunction) {
             "type_identifier" => {
                 f.type_refs.insert(text(n, b).to_string());
             }
-            "if_statement" | "for_statement" | "while_statement" | "do_statement" | "conditional_expression" => {
-                f.complexity += 1
-            }
-            "case_statement" if n.child_by_field_name("value").is_some() => f.complexity += 1,
-            "binary_expression" => {
-                if let Some(op) = n.child_by_field_name("operator") {
-                    if matches!(text(op, b), "&&" | "||") {
-                        f.complexity += 1;
-                    }
-                }
-            }
             "call_expression" => call(n, b, f),
             _ => {}
-        }
-        if kind.ends_with("_statement") && kind != "compound_statement" {
-            f.statements += 1;
         }
         let mut c = n.walk();
         let kids: Vec<Node> = n.children(&mut c).collect();
         stack.extend(kids.into_iter().rev());
     }
     f.body_hash = format!("{:016x}", hash);
+    // Structure comes from the complexity engine; its C profile counts the
+    // same decision points and statements this layer always has.
+    f.tier_a = crate::complexity::engine::analyze(body, b, &f.name, &crate::complexity::profiles::c::C);
+    f.complexity = f.tier_a.cyclomatic;
+    f.statements = f.tier_a.statements;
 }
 
 fn call(n: Node, b: &[u8], f: &mut CFunction) {
@@ -869,6 +879,61 @@ pub fn loop_macros_as_while(src: &str, names: &[&str]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    pub(crate) const CHARACTERIZATION: &str = r#"
+int sum_of_primes(int max) { int total = 0; for (int i = 1; i <= max; ++i) { for (int j = 2; j < i; ++j) { if (i % j == 0) { goto next; } } total += i; next:; } return total; }
+const char *get_words(int n) { switch (n) { case 1: return "one"; case 2: return "two"; default: return "lots"; } }
+int logic(int a, int b, int c, int d) { if (a && b && c || d) return 1; return a ? b : (c ? d : 0); }
+int sign(int x) { if (x > 0) return 1; else if (x < 0) return -1; else return 0; }
+void loops(int n) { int i = 0; do { i++; } while (i < n); while (n--) { if (n == 3) break; else continue; } for (;;) { if (i) return; } }
+int fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }
+void empty(void) { }
+void labels(int x) { again: x++; if (x < 3) goto again; { int y = x; (void) y; } }
+"#;
+    /// Values taken from the C layer before it used the complexity engine:
+    /// `cx:complexity` and `cx:statementCount` must not move.
+    #[test]
+    fn cyclomatic_and_statement_counts_are_unchanged() {
+        let f = extract(&mut new_parser(), "x.c", CHARACTERIZATION, None);
+        let got: Vec<(&str, usize, usize)> = f.functions.iter().map(|x| (x.name.as_str(), x.complexity, x.statements)).collect();
+        assert_eq!(
+            got,
+            vec![
+                ("empty", 1, 0),
+                ("fact", 2, 1),
+                ("get_words", 3, 7),
+                ("labels", 2, 5),
+                ("logic", 7, 3),
+                ("loops", 6, 9),
+                ("sign", 3, 5),
+                ("sum_of_primes", 4, 8),
+            ]
+        );
+    }
+
+    #[test]
+    fn c_functions_carry_tier_a_facts() {
+        let f = extract(&mut new_parser(), "x.c", CHARACTERIZATION, None);
+        let sop = f.functions.iter().find(|x| x.name == "sum_of_primes").unwrap();
+        assert_eq!((sop.tier_a.cognitive, sop.tier_a.max_nesting, sop.tier_a.loop_count), (7, 3, 2));
+        assert_eq!(sop.tier_a.cyclomatic, sop.complexity);
+        assert_eq!(sop.definition_sha256.as_deref().map(str::len), Some(64));
+        let fact = f.functions.iter().find(|x| x.name == "fact").unwrap();
+        assert_eq!(fact.tier_a.self_calls, 1);
+    }
+
+    #[test]
+    fn definition_sha256_skips_invalid_utf8_files_and_keeps_crlf() {
+        use sha2::{Digest, Sha256};
+        let crlf = "/* c */\r\nint f(void)\r\n{\r\n\treturn 1;\r\n}\r\n";
+        let f = extract_with(&mut new_parser(), "x.c", crlf, None, true);
+        let start = crlf.find("int").unwrap();
+        let end = crlf.rfind('}').unwrap() + 1;
+        let expected: String = Sha256::digest(&crlf.as_bytes()[start..end]).iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(f.functions[0].definition_sha256.as_deref(), Some(expected.as_str()));
+        let lossy = extract_with(&mut new_parser(), "x.c", "int f(void) { return '\u{fffd}'; }", None, false);
+        assert_eq!(lossy.functions[0].definition_sha256, None, "lossy text is not the file's bytes");
+        assert!(lossy.hash_skipped);
+    }
 
     #[test]
     fn erase_preserves_length_and_lines() {

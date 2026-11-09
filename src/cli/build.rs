@@ -130,14 +130,18 @@ pub async fn run(
 
     // C: read every file once, derive the loop and erased macros from the
     // tree's own #defines (never from a shipped list), then parse with them.
-    let c_sources: Vec<(String, String)> = c_paths
+    // A file that is not valid UTF-8 is parsed from a lossy decode, which is
+    // not its bytes: such files get no definition hashes.
+    let (c_sources, c_exact): (Vec<(String, String)>, Vec<bool>) = c_paths
         .par_iter()
         .map(|path| {
-            let raw = fs::read(path).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
+            let bytes = fs::read(path).unwrap_or_default();
+            let exact = std::str::from_utf8(&bytes).is_ok();
+            let raw = String::from_utf8_lossy(&bytes).into_owned();
             let rel = path.strip_prefix(&git_root).unwrap_or(path).to_string_lossy().replace('\\', "/");
-            (rel, raw)
+            ((rel, raw), exact)
         })
-        .collect();
+        .unzip();
     let macro_lists = lang_c::prepass::derive_macros(&c_sources);
     let unresolved_macro_statements: usize = c_sources
         .par_iter()
@@ -145,8 +149,9 @@ pub async fn run(
         .sum();
     let mut c_files: Vec<CFile> = c_sources
         .par_iter()
-        .map_init(lang_c::new_parser, |parser, (rel, raw)| {
-            let f = lang_c::extract(parser, rel, raw, Some(&macro_lists));
+        .zip(c_exact.par_iter())
+        .map_init(lang_c::new_parser, |parser, ((rel, raw), exact)| {
+            let f = lang_c::extract_with(parser, rel, raw, Some(&macro_lists), *exact);
             overall_pb.inc(1);
             f
         })
@@ -358,8 +363,11 @@ pub async fn run(
     }
 
     // Save build metadata
+    let (ontosys_commit, ontosys_dirty) = tool_commit();
     let metadata = BuildMetadata {
         ontosys_version: env!("CARGO_PKG_VERSION"),
+        ontosys_commit,
+        ontosys_dirty,
         redact_emails: config.redact_emails,
         timestamp: chrono::Utc::now().to_rfc3339(),
         git_head,
@@ -368,6 +376,9 @@ pub async fn run(
         c_files: c_files.len(),
         c_functions,
         c_parse_error_nodes: c_errors,
+        complexity: ComplexityMeta {
+            hash_skipped_invalid_utf8: c_files.iter().filter(|f| f.hash_skipped).count(),
+        },
         prepass: (!c_files.is_empty()).then(|| PrepassMeta {
             loop_macros: macro_lists.loop_macros.iter().cloned().collect(),
             erased_macro_count: macro_lists.erased.len(),
@@ -390,6 +401,8 @@ pub async fn run(
         data_path.join("build-meta.json"),
         serde_json::to_string_pretty(&metadata)?
     )?;
+    // The vocabulary every oc: term in this build's output is declared in.
+    fs::write(data_path.join("code.ttl"), include_str!("../../ontology/code.ttl"))?;
     // The C parse input in full: which macros the tree's own #defines made
     // loop headers or erased (mostly include guards, hence not in build-meta).
     let prepass_path = data_path.join("prepass.json");
@@ -541,6 +554,10 @@ const MAX_VIZ_TRIPLES: usize = 250_000;
 #[derive(serde::Serialize)]
 struct BuildMetadata {
     ontosys_version: &'static str,
+    /// The ontosys commit this binary was built from ("unknown" outside git).
+    ontosys_commit: &'static str,
+    /// Whether that ontosys tree had uncommitted changes when built.
+    ontosys_dirty: bool,
     redact_emails: bool,
     timestamp: String,
     /// HEAD's commit when the build started; absent outside a git repository.
@@ -553,6 +570,7 @@ struct BuildMetadata {
     c_files: usize,
     c_functions: usize,
     c_parse_error_nodes: usize,
+    complexity: ComplexityMeta,
     /// What the C prepass derived from the tree's own #defines (full lists in prepass.json).
     #[serde(skip_serializing_if = "Option::is_none")]
     prepass: Option<PrepassMeta>,
@@ -574,6 +592,17 @@ struct BuildMetadata {
     regular_comments_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     todo_count: Option<usize>,
+}
+
+#[derive(serde::Serialize)]
+struct ComplexityMeta {
+    /// C files parsed from a lossy UTF-8 decode, whose functions carry no definition hash.
+    hash_skipped_invalid_utf8: usize,
+}
+
+/// The ontosys commit this binary was built from, and whether its tree was dirty.
+fn tool_commit() -> (&'static str, bool) {
+    (env!("ONTOSYS_COMMIT"), env!("ONTOSYS_DIRTY") == "true")
 }
 
 #[derive(serde::Serialize)]
@@ -791,6 +820,15 @@ mod tests {
         };
         assert_eq!(rel(discover_files(root, &[Language::Python], &[]).unwrap()), vec![".github/scripts/ci.py", "src/app.py"]);
         assert_eq!(rel(discover_markdown_files(root).unwrap()), vec!["README.md"]);
+    }
+
+    #[test]
+    fn build_meta_names_the_tool_commit() {
+        let (commit, _dirty) = tool_commit();
+        assert!(
+            commit == "unknown" || (commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())),
+            "{commit}"
+        );
     }
 
     #[test]

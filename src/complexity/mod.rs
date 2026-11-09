@@ -7,6 +7,7 @@
 
 pub mod engine;
 pub mod profiles;
+pub mod rdf;
 
 use engine::Profile;
 

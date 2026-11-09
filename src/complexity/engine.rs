@@ -538,6 +538,14 @@ mod tests {
     }
 
     #[test]
+    fn c_counts_through_nested_definitions() {
+        // Standard C has no nested functions; a function_definition inside a
+        // body is GNU C or parse recovery, and the C layer always counted it.
+        let a = c("void f(void) { int g(int x) { if (x) return 1; return 0; } if (1) g(1); }");
+        assert_eq!(a.cyclomatic, 3);
+    }
+
+    #[test]
     fn deep_nesting_does_not_overflow() {
         let depth = 5000;
         let mut src = String::from("void deep(int x) {\n");

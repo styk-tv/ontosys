@@ -92,12 +92,11 @@ impl Profile for CProfile {
         logical_op(n, src).map(str::to_string)
     }
 
-    fn boundary(&self, n: Node) -> Boundary {
-        if n.kind() == "function_definition" {
-            Boundary::Named
-        } else {
-            Boundary::None
-        }
+    /// Standard C has no nested functions. A `function_definition` inside a
+    /// body is GNU C or tree-sitter's error recovery, and the C layer has
+    /// always counted through it, so nothing is a boundary.
+    fn boundary(&self, _n: Node) -> Boundary {
+        Boundary::None
     }
 
     fn call<'t>(
