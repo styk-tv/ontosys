@@ -145,6 +145,29 @@ enum Commands {
         json: Option<PathBuf>,
     },
 
+    /// Read every .ontosys/ under the roots into a private ledger, read-only;
+    /// report progression
+    Survey {
+        /// Directories to search for repositories with a .ontosys/ folder
+        roots: Vec<PathBuf>,
+
+        /// How many directory levels below each root to search
+        #[arg(long, default_value = "4")]
+        depth: usize,
+
+        /// Print progression from the ledger
+        #[arg(long)]
+        report: bool,
+
+        /// Build this repository's HEAD in a temporary clone and record that
+        #[arg(long)]
+        rebuild: Option<PathBuf>,
+
+        /// Ledger path (default: ~/.ontosys/survey/ledger.jsonl)
+        #[arg(long)]
+        ledger: Option<PathBuf>,
+    },
+
     /// Clean the .ontosys folder
     Clean {
         /// Remove everything including configuration
@@ -195,6 +218,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Diff { old, new, out, json } => {
             cli::diff::run(&old, &new, out, json).await
+        }
+        Commands::Survey { roots, depth, report, rebuild, ledger } => {
+            cli::survey::run(roots, depth, report, rebuild, ledger).await
         }
         Commands::Clean { all } => {
             cli::clean::run(&repo_path, all).await
