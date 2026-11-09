@@ -293,6 +293,7 @@ mod tests {
             evidence: f.evidence.clone(),
             definition_sha256: None,
             targets: vec![],
+            stub: false,
         };
         findings(&d, &f.evidence, &shipped(), g, name)
             .into_iter()
@@ -309,6 +310,7 @@ mod tests {
             evidence: f.evidence.clone(),
             definition_sha256: None,
             targets: vec![],
+            stub: false,
         };
         findings(&d, &f.evidence, &shipped(), Grammar::C, name)
             .into_iter()

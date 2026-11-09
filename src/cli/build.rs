@@ -83,6 +83,9 @@ pub async fn run(
         matches!(p.extension().and_then(|e| e.to_str()), Some("c" | "h"))
     });
 
+    // §7's cost budget: each phase is timed into build-meta. C's Tier A
+    // runs inside its parse (the engine walks each body as it is extracted).
+    let parse_started = std::time::Instant::now();
     // Setup progress tracking
     let multi_progress = MultiProgress::new();
     let overall_pb = multi_progress.add(ProgressBar::new((files.len() + c_paths.len()) as u64));
@@ -220,6 +223,8 @@ pub async fn run(
 
     let mut triples = builder.build_from_ast(&all_ast_nodes)?;
 
+    let parse_ms = parse_started.elapsed().as_millis() as u64;
+    let tier_a_started = std::time::Instant::now();
     // Tier A for the line-parsed languages: a tree-sitter scan of each file,
     // attached to its declarations by the line of each function's name.
     let scanned: Vec<(String, (Vec<complexity::scan::FunctionFacts>, usize), complexity::Grammar)> = files
@@ -239,12 +244,27 @@ pub async fn run(
         per_file.insert(rel, facts);
     }
     let (attached, mut tier_a_stats) = complexity::join::attach(&triples, &per_file);
+    // Names the scan defined but could not attach: a call to one is not
+    // costed by a catalog entry of the same name.
+    let unattached_names: std::collections::BTreeSet<(complexity::Grammar, String)> = {
+        let seen: std::collections::BTreeSet<(&str, usize, &str)> = attached
+            .iter()
+            .map(|(_, f)| (f.file.as_str(), f.name_line, f.name.as_str()))
+            .collect();
+        per_file
+            .values()
+            .flatten()
+            .filter(|f: &&complexity::scan::FunctionFacts| !seen.contains(&(f.file.as_str(), f.name_line, f.name.as_str())))
+            .map(|f| (f.grammar, f.name.clone()))
+            .collect()
+    };
     for (grammar, errors) in scan_errors {
         tier_a_stats.entry(grammar).or_default().error_nodes += errors;
     }
     for (iri, facts) in &attached {
         complexity::rdf::tier_a_triples(iri, &facts.tier_a, facts.definition_sha256.as_deref(), &mut triples);
     }
+    let tier_a_ms = tier_a_started.elapsed().as_millis() as u64;
 
     let c_index = (!c_files.is_empty()).then(|| lang_c::rdf::index(project_id, &c_files));
     if let Some(ix) = &c_index {
@@ -298,13 +318,18 @@ pub async fn run(
     // complexity.nt: facts that change when *other* code changes (links,
     // call graph, estimates), kept apart so graph.nt's sha stays about the code.
     // Cost catalog: the shipped one plus this repository's own overlay.
+    // The overlay and the claims are inputs of this build: their hashes go
+    // into build-meta, so a change to either is told apart from a tool change.
     let mut catalog = complexity::catalog::shipped();
+    let mut overlay_sha256 = None;
     if let Ok(overlay) = fs::read_to_string(ontosys_path.join("cost-catalog.ttl")) {
+        overlay_sha256 = Some(sha256_hex(overlay.as_bytes()));
         catalog = catalog
-            .with_overlay(&overlay)
+            .with_repository_overlay(&overlay)
             .map_err(|e| anyhow::anyhow!(".ontosys/cost-catalog.ttl: {e}"))?;
     }
     let mut complexity_triples = TripleSet::new();
+    let tier_b_started = std::time::Instant::now();
     let mut model = match &c_index {
         Some(ix) => {
             complexity::rdf::macro_links(project_id, &c_files, ix, &mut complexity_triples);
@@ -312,8 +337,11 @@ pub async fn run(
         }
         None => complexity::model::Model::default(),
     };
-    complexity::model::model_add_scanned(&mut model, attached);
+    complexity::model::model_add_scanned_with(&mut model, attached, &unattached_names);
     let (tier_b, call_cycles) = complexity::tier_b::tier_b(&model);
+    let tier_b_ms = tier_b_started.elapsed().as_millis() as u64;
+    let call_edges: usize = model.fns.iter().flat_map(|f| &f.defs).map(|d| d.targets.len()).sum();
+    let tier_c_started = std::time::Instant::now();
     let mut loops_by_class: std::collections::BTreeMap<complexity::loops::BoundClass, usize> = std::collections::BTreeMap::new();
     for f in &model.fns {
         for d in &f.defs {
@@ -331,10 +359,15 @@ pub async fn run(
         .map(|f| f.defs.iter().flat_map(|d| complexity::findings::findings(d, &d.evidence, &catalog, f.grammar, &f.name)).collect())
         .collect();
     complexity::rdf::tier_c_triples(&model, &estimates, &findings, &catalog.version, &mut complexity_triples);
+    let tier_c_ms = tier_c_started.elapsed().as_millis() as u64;
     // Tier D: claims this repository keeps about its functions.
     let claims_path = ontosys_path.join("claims").join("complexity.ttl");
+    let mut claims_sha256 = None;
     let claims = match fs::read_to_string(&claims_path) {
-        Ok(ttl) => complexity::claims::parse_claims(&ttl).map_err(|e| anyhow::anyhow!(".ontosys/claims/complexity.ttl: {e}"))?,
+        Ok(ttl) => {
+            claims_sha256 = Some(sha256_hex(ttl.as_bytes()));
+            complexity::claims::parse_claims(&ttl).map_err(|e| anyhow::anyhow!(".ontosys/claims/complexity.ttl: {e}"))?
+        }
         Err(_) => Vec::new(),
     };
     let claim_stats = complexity::claims::claim_triples(&claims, &model, &mut complexity_triples);
@@ -479,6 +512,16 @@ pub async fn run(
         complexity: ComplexityMeta {
             hash_skipped_invalid_utf8: c_files.iter().filter(|f| f.hash_skipped).count(),
             catalog_version: catalog.version.clone(),
+            overlay_version: catalog.overlay_version.clone(),
+            overlay_sha256,
+            claims_sha256,
+            timings_ms: std::collections::BTreeMap::from([
+                ("parse", parse_ms),
+                ("tier_a", tier_a_ms),
+                ("tier_b", tier_b_ms),
+                ("tier_c", tier_c_ms),
+            ]),
+            call_edges,
             by_basis,
             by_reason,
             by_assumption,
@@ -500,6 +543,7 @@ pub async fn run(
         },
         prepass: (!c_files.is_empty()).then(|| PrepassMeta {
             loop_macros: macro_lists.loop_macros.iter().cloned().collect(),
+            short_loop_macros: macro_lists.short_loop_macros.iter().cloned().collect(),
             erased_macro_count: macro_lists.erased.len(),
             defined_macro_count: macro_lists.defined.len(),
             unresolved_macro_statements,
@@ -534,6 +578,7 @@ pub async fn run(
             &prepass_path,
             serde_json::to_string_pretty(&serde_json::json!({
                 "loop_macros": macro_lists.loop_macros,
+                "short_loop_macros": macro_lists.short_loop_macros,
                 "erased_macros": macro_lists.erased,
             }))?,
         )?;
@@ -723,8 +768,23 @@ struct BuildMetadata {
 struct ComplexityMeta {
     /// C files parsed from a lossy UTF-8 decode, whose functions carry no definition hash.
     hash_skipped_invalid_utf8: usize,
-    /// The cost catalog version (shipped, plus the repository overlay when present).
+    /// The shipped cost catalog's version (an overlay never replaces it).
     catalog_version: String,
+    /// The repository overlay's own `owl:versionInfo`, when it states one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    overlay_version: Option<String>,
+    /// sha256 of .ontosys/cost-catalog.ttl's bytes, when present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    overlay_sha256: Option<String>,
+    /// sha256 of .ontosys/claims/complexity.ttl's bytes, when present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    claims_sha256: Option<String>,
+    /// Wall time of each phase, for §7's budget (Tier A + C within 50% of
+    /// parse; Tier B within 1 s per 200,000 call edges). C's Tier A is
+    /// inside `parse`; `tier_b` includes building the call model.
+    timings_ms: std::collections::BTreeMap<&'static str, u64>,
+    /// Call sites in the model: Tier B's budget is per edge.
+    call_edges: usize,
     /// Functions by estimate basis (exact-shape, partial, unknown).
     by_basis: std::collections::BTreeMap<complexity::estimate::Basis, usize>,
     /// Functions by each reason their upper bound is missing.
@@ -757,6 +817,9 @@ fn tool_commit() -> (&'static str, bool) {
 #[derive(serde::Serialize)]
 struct PrepassMeta {
     loop_macros: Vec<String>,
+    /// Loop macros whose names are under five characters: derived, not
+    /// rewritten, so their uses stay parse errors.
+    short_loop_macros: Vec<String>,
     erased_macro_count: usize,
     defined_macro_count: usize,
     /// Indented `NAME(args)` lines whose NAME no scanned file defines.

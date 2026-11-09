@@ -19,6 +19,117 @@ pub struct MacroLists {
     pub erased: BTreeSet<String>,
     /// Every macro name defined in the scanned files.
     pub defined: BTreeSet<String>,
+    /// Loop macros whose names are too short to become `while` in place:
+    /// derived, but not rewritten (their uses stay parse errors).
+    pub short_loop_macros: BTreeSet<String>,
+    /// Every loop macro's distinct definitions: (parameters, replacement).
+    pub loop_defs: BTreeMap<String, Vec<(Vec<String>, String)>>,
+}
+
+impl MacroLists {
+    /// The `for (…)`/`while (…)` header a loop macro expands to with these
+    /// arguments, following loop macros defined through others. `None` when
+    /// the name has several different definitions, or the arguments do not
+    /// match its parameters.
+    pub fn expand_loop_header(&self, name: &str, args: &[String]) -> Option<String> {
+        let mut name = name.to_string();
+        let mut args = args.to_vec();
+        for _ in 0..8 {
+            let defs = self.loop_defs.get(&name)?;
+            let [(params, body)] = defs.as_slice() else {
+                return None;
+            };
+            let variadic = params.last().is_some_and(|p| p == "...");
+            let fixed = if variadic { params.len() - 1 } else { params.len() };
+            if args.len() < fixed || (!variadic && args.len() != fixed) {
+                return None;
+            }
+            let expanded = substitute(body, &params[..fixed], &args, variadic.then(|| args[fixed..].join(", ")));
+            let mut s = expanded.trim_start();
+            if let Some(rest) = s.strip_prefix("do") {
+                if let Some(rest) = rest.trim_start().strip_prefix('{') {
+                    s = rest.trim_start();
+                }
+            }
+            let (word, rest) = split_ident(s);
+            let rest_t = rest.trim_start();
+            let end = close_paren(rest_t.as_bytes(), 0)?;
+            if matches!(word, "for" | "while") {
+                return Some(format!("{word} {}", &rest_t[..end]));
+            }
+            if !self.loop_defs.contains_key(word) {
+                return None;
+            }
+            args = split_args(&rest_t[1..end - 1]);
+            name = word.to_string();
+        }
+        None
+    }
+}
+
+/// Top-level comma-separated arguments of a macro call, trimmed.
+pub fn split_args(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let (mut depth, mut cur) = (0i32, String::new());
+    for c in s.chars() {
+        match c {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth -= 1,
+            ',' if depth == 0 => {
+                out.push(cur.trim().to_string());
+                cur.clear();
+                continue;
+            }
+            _ => {}
+        }
+        cur.push(c);
+    }
+    if !cur.trim().is_empty() || !out.is_empty() {
+        out.push(cur.trim().to_string());
+    }
+    out
+}
+
+/// A replacement text with each parameter (a whole identifier, outside
+/// string and character literals) replaced by its argument; `__VA_ARGS__`
+/// by the rest; `#` and `##` dropped.
+fn substitute(body: &str, params: &[String], args: &[String], rest: Option<String>) -> String {
+    let b = body.as_bytes();
+    let mut out = String::with_capacity(body.len());
+    let mut i = 0;
+    while i < b.len() {
+        let c = b[i];
+        if c == b'"' || c == b'\'' {
+            let start = i;
+            i += 1;
+            while i < b.len() && b[i] != c {
+                if b[i] == b'\\' {
+                    i += 1;
+                }
+                i += 1;
+            }
+            i = (i + 1).min(b.len());
+            out.push_str(&body[start..i]);
+        } else if c.is_ascii_alphabetic() || c == b'_' {
+            let start = i;
+            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
+                i += 1;
+            }
+            let word = &body[start..i];
+            match params.iter().position(|p| p == word) {
+                Some(k) => out.push_str(&args[k]),
+                None if word == "__VA_ARGS__" => out.push_str(rest.as_deref().unwrap_or("")),
+                None => out.push_str(word),
+            }
+        } else if c == b'#' {
+            i += 1;
+        } else {
+            let ch = body[i..].chars().next().unwrap_or(' ');
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+    }
+    out
 }
 
 /// What one `#define` expands to, as far as the prepass cares.
@@ -38,9 +149,13 @@ enum Kind {
 /// fixed point.
 pub fn derive_macros(files: &[(String, String)]) -> MacroLists {
     let mut defs: BTreeMap<String, Vec<(bool, String)>> = BTreeMap::new();
+    let mut with_params: BTreeMap<String, BTreeSet<(Vec<String>, String)>> = BTreeMap::new();
     for (_, text) in files {
-        for (name, is_fn, body) in defines(text) {
-            defs.entry(name).or_default().push((is_fn, body));
+        for (name, params, body) in defines(text) {
+            defs.entry(name.clone()).or_default().push((params.is_some(), body.clone()));
+            if let Some(ps) = params {
+                with_params.entry(name).or_default().insert((ps, body));
+            }
         }
     }
     let mut out = MacroLists {
@@ -79,12 +194,24 @@ pub fn derive_macros(files: &[(String, String)]) -> MacroLists {
             break;
         }
     }
+    for name in &out.loop_macros {
+        if let Some(ds) = with_params.get(name) {
+            out.loop_defs.insert(name.clone(), ds.iter().cloned().collect());
+        }
+    }
+    // `while` needs five characters of room: a shorter name cannot be
+    // rewritten in place, so it is listed apart, not claimed as handled.
+    let short: Vec<String> = out.loop_macros.iter().filter(|n| n.len() < 5).cloned().collect();
+    for n in short {
+        out.loop_macros.remove(&n);
+        out.short_loop_macros.insert(n);
+    }
     out
 }
 
 /// `(name, function-like, replacement text without comments)` for every
 /// `#define` in `text`, with `\` continuation lines joined.
-fn defines(text: &str) -> Vec<(String, bool, String)> {
+fn defines(text: &str) -> Vec<(String, Option<Vec<String>>, String)> {
     let mut out = Vec::new();
     let mut lines = text.lines();
     while let Some(first) = lines.next() {
@@ -118,15 +245,24 @@ fn defines(text: &str) -> Vec<(String, bool, String)> {
         }
         let name = logical[..name_end].to_string();
         let after = &logical[name_end..];
-        let (is_fn, body) = if after.starts_with('(') {
+        let (params, body) = if after.starts_with('(') {
             match close_paren(after.as_bytes(), 0) {
-                Some(end) => (true, after[end..].to_string()),
+                Some(end) => (
+                    Some(
+                        after[1..end - 1]
+                            .split(',')
+                            .map(|p| p.trim().to_string())
+                            .filter(|p| !p.is_empty())
+                            .collect(),
+                    ),
+                    after[end..].to_string(),
+                ),
                 None => continue,
             }
         } else {
-            (false, after.to_string())
+            (None, after.to_string())
         };
-        out.push((name, is_fn, body.trim().to_string()));
+        out.push((name, params, body.trim().to_string()));
     }
     out
 }
@@ -414,8 +550,8 @@ mod tests {
         let m = lists(
             "#define each(x) do { for (;;)\n#define SWAP(a,b) do { t=a; a=b; b=t; } while (0)\n",
         );
-        assert!(m.loop_macros.contains("each"));
-        assert!(!m.loop_macros.contains("SWAP"));
+        assert!(m.short_loop_macros.contains("each"), "derived; too short to rewrite");
+        assert!(!m.loop_macros.contains("SWAP") && !m.short_loop_macros.contains("SWAP"));
     }
 
     #[test]
@@ -543,6 +679,31 @@ mod tests {
         );
         assert!(m.loop_macros.contains("foreach_ptr"));
         assert!(m.erased.contains("ASSERT_ONLY"));
+    }
+
+    #[test]
+    fn short_loop_macros_are_listed_apart_and_not_claimed_handled() {
+        let m = lists("#define REP(i, n) for (int i = 0; i < (n); i++)\n#define each(x) for (;;)\n#define REPEAT(i, n) for (int i = 0; i < (n); i++)\n");
+        assert_eq!(m.loop_macros, BTreeSet::from(["REPEAT".to_string()]));
+        assert_eq!(
+            m.short_loop_macros,
+            BTreeSet::from(["REP".to_string(), "each".to_string()]),
+            "a name under five characters cannot become `while` in place"
+        );
+    }
+
+    #[test]
+    fn a_loop_macro_header_expands_with_its_arguments() {
+        let m = lists("#define foreach_internal(a, b) for (int a = 0; a < (b); a++)\n#define foreach_ptr(t, v, l) foreach_internal(v, l)\n#define DLIST(it, h) for ((it).cur = (h)->next; (it).cur != (h); (it).cur = (it).cur->next)\n");
+        assert_eq!(
+            m.expand_loop_header("foreach_ptr", &["T".into(), "x".into(), "list->n".into()]).as_deref(),
+            Some("for (int x = 0; x < (list->n); x++)")
+        );
+        assert_eq!(
+            m.expand_loop_header("DLIST", &["iter".into(), "head".into()]).as_deref(),
+            Some("for ((iter).cur = (head)->next; (iter).cur != (head); (iter).cur = (iter).cur->next)")
+        );
+        assert_eq!(m.expand_loop_header("nope", &[]), None);
     }
 
     #[test]

@@ -196,6 +196,12 @@ pub fn extract_with(parser: &mut Parser, rel_path: &str, raw: &str, macros: Opti
             }
         }
     }
+    // Hashes are cut from the original bytes at the parse's offsets: only
+    // sound while the parsed text keeps every offset.
+    let original = original.filter(|o| o.len() == src.len());
+    if original.is_none() {
+        file.hash_skipped = true;
+    }
     let root = tree.root_node();
     let b = src.as_bytes();
     {
@@ -210,6 +216,9 @@ pub fn extract_with(parser: &mut Parser, rel_path: &str, raw: &str, macros: Opti
 
     walk_top(root, b, original, &mut file);
     collect_types(root, b, &mut file);
+    if let Some(lists) = macros {
+        reclassify_macro_loops(&mut file, raw.as_bytes(), b, lists);
+    }
 
     file.functions.sort_by(|a, b| a.name.cmp(&b.name).then(a.start_line.cmp(&b.start_line)));
     file.prototypes.sort_by(|a, b| a.name.cmp(&b.name));
@@ -749,7 +758,9 @@ pub fn flatten_for_reparse(src: &str) -> String {
             .unwrap_or(false);
         let bare_macro = !continuing && is_bare_macro_line(body);
         if directive || continuing || bare_macro {
-            let blanked: String = line.chars().map(|c| if c == '\n' || c == '\r' { c } else { ' ' }).collect();
+            // Per byte, not per character: a multibyte character becomes as
+            // many blanks as it had bytes, so every byte offset holds.
+            let blanked: String = line.bytes().map(|b| if b == b'\n' || b == b'\r' { b as char } else { ' ' }).collect();
             out.push_str(&blanked);
             continuing = (directive || continuing) && body.ends_with('\\');
         } else {
@@ -757,6 +768,50 @@ pub fn flatten_for_reparse(src: &str) -> String {
         }
     }
     out
+}
+
+/// A loop macro rewritten to `while (args)` is classified by its own
+/// definition: its header expanded with the arguments at the use, over the
+/// body at the use. Without a single definition that expands, it is
+/// `Unknown`.
+fn reclassify_macro_loops(file: &mut CFile, raw: &[u8], src: &[u8], lists: &prepass::MacroLists) {
+    use crate::complexity::loops::{classify_first_c_loop, BoundClass, MinTrips};
+    for f in &mut file.functions {
+        for l in &mut f.loops {
+            let s = l.site.start_byte;
+            if s >= raw.len() || l.site.end_byte > src.len() {
+                continue;
+            }
+            let name_len = raw[s..].iter().take_while(|b| b.is_ascii_alphanumeric() || **b == b'_').count();
+            let name = std::str::from_utf8(&raw[s..s + name_len]).unwrap_or("");
+            if !lists.loop_macros.contains(name) {
+                continue;
+            }
+            let text = std::str::from_utf8(&src[s..l.site.end_byte]).unwrap_or("");
+            let class = paren_group_end(text.as_bytes(), "while".len()).and_then(|close| {
+                let open = text.find('(')?;
+                let args = prepass::split_args(&text[open + 1..close - 1]);
+                let header = lists.expand_loop_header(name, &args)?;
+                classify_first_c_loop(&format!("void __m(void) {{ {header} {} }}", &text[close..]))
+            });
+            match class {
+                Some((class, bound, controls, assumptions, min)) => {
+                    l.class = class;
+                    l.bound_expression = bound;
+                    l.controls = controls;
+                    l.assumptions = assumptions;
+                    l.min_trips = min;
+                }
+                None => {
+                    l.class = BoundClass::Unknown;
+                    l.bound_expression = format!("loop macro {name}");
+                    l.controls.clear();
+                    l.assumptions.clear();
+                    l.min_trips = MinTrips::Zero;
+                }
+            }
+        }
+    }
 }
 
 /// `NAME(args)` alone on a line at column 0, NAME all caps, no trailing `;`.
@@ -958,6 +1013,36 @@ void labels(int x) { again: x++; if (x < 3) goto again; { int y = x; (void) y; }
         let lossy = extract_with(&mut new_parser(), "x.c", "int f(void) { return '\u{fffd}'; }", None, false);
         assert_eq!(lossy.functions[0].definition_sha256, None, "lossy text is not the file's bytes");
         assert!(lossy.hash_skipped);
+    }
+
+    #[test]
+    fn definition_sha256_survives_a_reparse_after_multibyte_text() {
+        use sha2::{Digest, Sha256};
+        let src = "int g(int x) {\n    if (x == 1)\n        return 1;\n#ifdef FOO /* café – note */\n    else if (x == 2)\n        return 2;\n#endif\n    else\n        return 0;\n}\n\nint h(int y)\n{\n    return y;\n}\n";
+        assert_eq!(flatten_for_reparse(src).len(), src.len(), "blanking keeps every byte offset");
+        let f = extract(&mut new_parser(), "x.c", src, None);
+        for (name, start, end) in [("g", src.find("int g").unwrap(), src.find("}\n\nint h").unwrap() + 1), ("h", src.find("int h").unwrap(), src.rfind('}').unwrap() + 1)] {
+            let func = f.functions.iter().find(|x| x.name == name).unwrap();
+            let expected: String = Sha256::digest(&src.as_bytes()[start..end]).iter().map(|b| format!("{b:02x}")).collect();
+            assert_eq!(func.definition_sha256.as_deref(), Some(expected.as_str()), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_loop_macro_is_classified_by_its_own_header() {
+        use crate::complexity::loops::BoundClass;
+        let src = "#define RETRY(n) for (;;)\n#define REPEAT(i, n) for (int i = 0; i < (n); i++)\nvoid f(int x, int n) { RETRY(3) { if (x) break; } REPEAT(i, n) { x++; } REPEAT(i, n) { n++; } }\n";
+        let lists = prepass::derive_macros(&[("x.c".to_string(), src.to_string())]);
+        let f = extract(&mut new_parser(), "x.c", src, Some(&lists));
+        let classes: Vec<BoundClass> = f.functions[0].loops.iter().map(|l| l.class).collect();
+        assert_eq!(classes, vec![BoundClass::Unbounded, BoundClass::Size, BoundClass::Unknown]);
+        assert_eq!(f.functions[0].loops[1].bound_expression, "n");
+        // A header the parser cannot read in full (a type as a macro argument)
+        // still classifies when its condition and update are clean.
+        let src = "#define DFOREACH(it, h) for (CHECK_TYPE(h, head *), (it).cur = (h)->next; (it).cur != (h); (it).cur = (it).cur->next)\nvoid g(struct head *h) { struct iter it; DFOREACH(it, h) { use(it.cur); } }\n";
+        let lists = prepass::derive_macros(&[("x.c".to_string(), src.to_string())]);
+        let f = extract(&mut new_parser(), "x.c", src, Some(&lists));
+        assert_eq!(f.functions[0].loops[0].class, BoundClass::Sentinel, "{:?}", f.functions[0].loops[0]);
     }
 
     #[test]

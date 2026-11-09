@@ -149,6 +149,7 @@ impl Profile for PythonProfile {
             "return_statement" => Exit::Return,
             "raise_statement" => Exit::Throw,
             "break_statement" => Exit::Break(None),
+            "continue_statement" => Exit::Continue(None),
             _ => Exit::None,
         }
     }
@@ -159,6 +160,20 @@ impl Profile for PythonProfile {
 
     fn label(&self, _n: Node, _src: &[u8]) -> Option<String> {
         None
+    }
+
+    fn comprehension(&self, n: Node) -> bool {
+        matches!(
+            n.kind(),
+            "list_comprehension"
+                | "set_comprehension"
+                | "dictionary_comprehension"
+                | "generator_expression"
+        )
+    }
+
+    fn defers(&self, n: Node) -> bool {
+        n.kind() == "yield"
     }
 
     /// A decorated function's span starts at its first decorator.

@@ -12,6 +12,7 @@ int count_a(const char *s) { int c = 0; for (int i = 0; i < strlen(s); i++) if (
 int pairs(int *a, int n) { int c = 0; for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) if (a[i] == a[j]) c++; return c; }
 int ten(void) { int s = 0; for (int i = 0; i < 10; i++) s += i; return s; }
 int first(int *a) { int i = 0; while (1) { if (a[i]) break; i++; } return i; }
+static int cmp(const void *a, const void *b) { return *(const int *)a - *(const int *)b; }
 void sorts(int **rows, int n, int m) { for (int i = 0; i < n; i++) qsort(rows[i], m, sizeof(int), cmp); }
 int find(int *a, int n, int x) { for (int i = 0; i < n; i++) if (a[i] == x) return i; return -1; }
 void grow(int n) { for (int i = 0; i < n; i++) { if (i == 3) n++; } }

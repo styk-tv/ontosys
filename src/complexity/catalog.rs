@@ -16,6 +16,14 @@ pub enum SizeArg {
     Receiver,
 }
 
+/// Which argument of a higher-order call is the function it calls.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Callback {
+    Arg(usize),
+    /// A keyword argument (`key=` in Python).
+    Keyword(String),
+}
+
 #[derive(Debug, Clone)]
 pub struct CostEntry {
     /// Language family; JavaScript entries serve TypeScript and TSX.
@@ -25,11 +33,18 @@ pub struct CostEntry {
     pub worst: Cost,
     pub average: Option<Cost>,
     pub amortized: Option<Cost>,
-    pub size_arg: Option<SizeArg>,
+    /// The sizes the cost grows with (several add up: `strcat` walks both).
+    pub size_args: Vec<SizeArg>,
     /// The cost grows with the output written (printf and friends).
     pub output: bool,
     /// The call runs a callback once per element of this argument.
     pub iterates: Option<SizeArg>,
+    /// The argument holding the function the call invokes.
+    pub callback: Option<Callback>,
+    /// The call appends to this argument, so it grows across a loop.
+    pub grows: Option<SizeArg>,
+    /// From the repository's own overlay, not the shipped catalog.
+    pub overlay: bool,
     pub source: String,
 }
 
@@ -40,6 +55,8 @@ pub struct Catalog {
     by_key: HashMap<(u8, String), Vec<usize>>,
     /// Size name → the name that caps it (`npos` ≤ `MAXNUMPOS`).
     pub caps: BTreeMap<String, String>,
+    /// The repository overlay's `owl:versionInfo`, when it states one.
+    pub overlay_version: Option<String>,
 }
 
 pub fn family(g: Grammar) -> u8 {
@@ -86,9 +103,21 @@ fn size_arg(s: &str) -> Option<SizeArg> {
 }
 
 impl Catalog {
-    /// Add entries and size caps from Turtle (the shipped catalog, or a
-    /// repository's overlay). A parse error names its line.
-    pub fn with_overlay(mut self, ttl: &str) -> anyhow::Result<Catalog> {
+    /// Add entries and size caps from Turtle, as part of the shipped
+    /// catalog: its `owl:versionInfo` is the catalog's version. A parse error
+    /// names its line.
+    pub fn with_overlay(self, ttl: &str) -> anyhow::Result<Catalog> {
+        self.add_ttl(ttl, false)
+    }
+
+    /// A repository's `.ontosys/cost-catalog.ttl`: its entries are marked as
+    /// the repository's own (they may state its functions and macros), and
+    /// its `owl:versionInfo` is kept apart from the shipped version.
+    pub fn with_repository_overlay(self, ttl: &str) -> anyhow::Result<Catalog> {
+        self.add_ttl(ttl, true)
+    }
+
+    fn add_ttl(mut self, ttl: &str, overlay: bool) -> anyhow::Result<Catalog> {
         use oxigraph::io::{RdfFormat, RdfParser};
         use oxigraph::model::{NamedOrBlankNode, Term};
         let mut by_subject: BTreeMap<String, Vec<(String, Term)>> = BTreeMap::new();
@@ -110,9 +139,25 @@ impl Catalog {
                 other => other.to_string(),
             })
         };
+        let values = |ps: &[(String, Term)], p: &str| -> Vec<String> {
+            let mut v: Vec<String> = ps
+                .iter()
+                .filter(|(k, _)| k == p)
+                .filter_map(|(_, t)| match t {
+                    Term::Literal(l) => Some(l.value().to_string()),
+                    _ => None,
+                })
+                .collect();
+            v.sort();
+            v
+        };
         for (subject, ps) in &by_subject {
             if let Some(v) = value(ps, VERSION_INFO) {
-                self.version = v;
+                if overlay {
+                    self.overlay_version = Some(v);
+                } else {
+                    self.version = v;
+                }
             }
             let ty = value(ps, RDF_TYPE).unwrap_or_default();
             let code = |local: &str| value(ps, &format!("{CODE}{local}"));
@@ -140,9 +185,20 @@ impl Catalog {
                     worst,
                     average: code("averageClass").and_then(|c| class_cost(&c)),
                     amortized: code("amortizedClass").and_then(|c| class_cost(&c)),
-                    size_arg: code("sizeOf").and_then(|s| size_arg(&s)),
-                    output: code("sizeOf").as_deref() == Some("output"),
+                    size_args: values(ps, &format!("{CODE}sizeOf"))
+                        .iter()
+                        .filter_map(|s| size_arg(s))
+                        .collect(),
+                    output: values(ps, &format!("{CODE}sizeOf"))
+                        .iter()
+                        .any(|s| s == "output"),
                     iterates: code("iterates").and_then(|s| size_arg(&s)),
+                    callback: code("callbackArg").map(|s| match size_arg(&s) {
+                        Some(SizeArg::Arg(k)) => Callback::Arg(k),
+                        _ => Callback::Keyword(s),
+                    }),
+                    grows: code("growsArg").and_then(|s| size_arg(&s)),
+                    overlay,
                     source: code("source").unwrap_or_default(),
                 });
             }
@@ -198,8 +254,8 @@ mod tests {
         let e = c.lookup(Grammar::C, "strlen");
         assert_eq!(e.len(), 1);
         assert_eq!(
-            (e[0].worst, e[0].size_arg.clone()),
-            (Cost::n(), Some(SizeArg::Arg(0)))
+            (e[0].worst, e[0].size_args.clone()),
+            (Cost::n(), vec![SizeArg::Arg(0)])
         );
     }
 
@@ -209,8 +265,8 @@ mod tests {
         let e = c.lookup(Grammar::C, "qsort");
         // POSIX does not bound qsort; quicksort-based libcs are O(n^2) worst.
         assert_eq!(
-            (e[0].worst, e[0].size_arg.clone()),
-            (Cost::n().mul(Cost::n()), Some(SizeArg::Arg(1)))
+            (e[0].worst, e[0].size_args.clone()),
+            (Cost::n().mul(Cost::n()), vec![SizeArg::Arg(1)])
         );
         assert_eq!(e[0].average, Some(Cost::n().mul(Cost::log_n())));
     }
@@ -236,8 +292,8 @@ mod tests {
         );
         assert_eq!(
             e.iter().map(|x| x.worst).fold(Cost::ONE, Cost::max),
-            Cost::n(),
-            "unknown receiver: the worst"
+            Cost::n().mul(Cost::n()),
+            "unknown receiver: the worst (a str substring search)"
         );
         let js = c.lookup(Grammar::TypeScript, "includes");
         assert!(!js.is_empty(), "JavaScript entries serve TypeScript");
@@ -265,6 +321,113 @@ mod tests {
             c.lookup(Grammar::C, "find_wordentry")[0].worst,
             Cost::log_n()
         );
+    }
+
+    #[test]
+    fn a_repository_overlay_is_marked_and_keeps_the_shipped_version() {
+        let shipped_version = shipped().version;
+        let c = shipped()
+            .with_repository_overlay(
+                "@prefix code: <https://ontosys.io/ns/code#> .\n@prefix owl: <http://www.w3.org/2002/07/owl#> .\n\
+                 <urn:x> owl:versionInfo \"mine 1\" .\n\
+                 [] a code:CostEntry ; code:language \"c\" ; code:operation \"find_entry\" ; code:worstClass code:OLogN ; code:sizeOf \"arg1\" ; code:source \"read\" .\n",
+            )
+            .unwrap();
+        assert_eq!(
+            c.version, shipped_version,
+            "the shipped catalog's version stays"
+        );
+        assert_eq!(c.overlay_version.as_deref(), Some("mine 1"));
+        assert!(c.lookup(Grammar::C, "find_entry")[0].overlay);
+        assert!(!c.lookup(Grammar::C, "strlen")[0].overlay);
+    }
+
+    /// Worst case for any implementation (final review I3).
+    #[test]
+    fn shipped_entries_take_the_worst_implementation() {
+        let c = shipped();
+        let n2 = Cost::n().mul(Cost::n());
+        let worst = |g: Grammar, name: &str| {
+            c.lookup(g, name)
+                .iter()
+                .map(|e| e.worst)
+                .fold(Cost::ONE, Cost::max)
+        };
+        let strcat = &c.lookup(Grammar::C, "strcat")[0];
+        assert_eq!(
+            strcat.size_args,
+            vec![SizeArg::Arg(0), SizeArg::Arg(1)],
+            "strcat walks dst too"
+        );
+        assert_eq!(strcat.grows, Some(SizeArg::Arg(0)));
+        assert_eq!(
+            c.lookup(Grammar::C, "strncat")[0].grows,
+            Some(SizeArg::Arg(0))
+        );
+        assert_eq!(
+            c.lookup(Grammar::C, "calloc")[0].size_args,
+            vec![SizeArg::Arg(0), SizeArg::Arg(1)]
+        );
+        assert_eq!(
+            c.lookup(Grammar::JavaScript, "assign")[0].size_args,
+            vec![SizeArg::Arg(1)]
+        );
+        for name in [
+            "set",
+            "frozenset",
+            "dict",
+            "update",
+            "union",
+            "intersection",
+            "difference",
+            "int",
+        ] {
+            assert_eq!(worst(Grammar::Python, name), n2, "python {name}");
+        }
+        for name in ["find", "index", "count", "replace", "split", "__contains__"] {
+            let str_entry = c
+                .lookup(Grammar::Python, name)
+                .into_iter()
+                .find(|e| e.receiver.as_deref() == Some("str"))
+                .unwrap();
+            assert_eq!(str_entry.worst, n2, "python str.{name}: substring search");
+        }
+        for name in ["includes", "indexOf", "split", "replace", "replaceAll"] {
+            let s = c
+                .lookup(Grammar::JavaScript, name)
+                .into_iter()
+                .find(|e| e.receiver.as_deref() == Some("String"))
+                .unwrap();
+            assert_eq!(s.worst, n2, "String.{name}: substring search");
+        }
+        assert!(
+            c.lookup(Grammar::Python, "pow").is_empty(),
+            "big-integer pow has no size class"
+        );
+    }
+
+    #[test]
+    fn higher_order_entries_name_their_callback() {
+        let c = shipped();
+        let cb = |g: Grammar, name: &str| c.lookup(g, name).iter().find_map(|e| e.callback.clone());
+        assert_eq!(cb(Grammar::C, "qsort"), Some(Callback::Arg(3)));
+        assert_eq!(cb(Grammar::C, "bsearch"), Some(Callback::Arg(4)));
+        assert_eq!(cb(Grammar::Python, "map"), Some(Callback::Arg(0)));
+        assert_eq!(
+            cb(Grammar::Python, "sorted"),
+            Some(Callback::Keyword("key".into()))
+        );
+        assert_eq!(cb(Grammar::Rust, "fold"), Some(Callback::Arg(1)));
+        assert_eq!(cb(Grammar::Rust, "sort_by"), Some(Callback::Arg(0)));
+        assert_eq!(cb(Grammar::JavaScript, "sort"), Some(Callback::Arg(0)));
+        assert_eq!(cb(Grammar::JavaScript, "map"), Some(Callback::Arg(0)));
+        for (g, name) in [
+            (Grammar::Rust, "cmp"),
+            (Grammar::Rust, "rev"),
+            (Grammar::JavaScript, "localeCompare"),
+        ] {
+            assert!(!c.lookup(g, name).is_empty(), "{name} is catalogued");
+        }
     }
 
     #[test]

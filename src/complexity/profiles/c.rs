@@ -125,6 +125,7 @@ impl Profile for CProfile {
         match n.kind() {
             "return_statement" => Exit::Return,
             "break_statement" => Exit::Break(None),
+            "continue_statement" => Exit::Continue(None),
             "goto_statement" => match n.child_by_field_name("label") {
                 Some(l) => Exit::Goto(text(l, src).to_string()),
                 None => Exit::Goto(String::new()),

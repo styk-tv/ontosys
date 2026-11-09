@@ -41,7 +41,8 @@ impl Profile for JsProfile {
             "binary_expression" if logical_op(n, src).is_some() => 1,
             // `a ||= b`, `a &&= b`, `a ??= b` short-circuit like their operators
             "augmented_assignment_expression"
-                if n.child_by_field_name("operator").is_some_and(|o| matches!(text(o, src), "||=" | "&&=" | "??=")) =>
+                if n.child_by_field_name("operator")
+                    .is_some_and(|o| matches!(text(o, src), "||=" | "&&=" | "??=")) =>
             {
                 1
             }
@@ -177,6 +178,10 @@ impl Profile for JsProfile {
                 n.child_by_field_name("label")
                     .map(|l| text(l, src).to_string()),
             ),
+            "continue_statement" => Exit::Continue(
+                n.child_by_field_name("label")
+                    .map(|l| text(l, src).to_string()),
+            ),
             _ => Exit::None,
         }
     }
@@ -191,6 +196,10 @@ impl Profile for JsProfile {
         }
         n.child_by_field_name("label")
             .map(|l| text(l, src).to_string())
+    }
+
+    fn defers(&self, n: Node) -> bool {
+        n.kind() == "yield_expression"
     }
 
     /// TypeScript puts a method's decorators before it in the class body;

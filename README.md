@@ -6,7 +6,7 @@ A multi-language code knowledge graph system that extracts semantic information 
 
 - **Multi-Language Support**: C (tree-sitter syntax trees), Rust, Python, TypeScript, JavaScript, plus a Markdown docs layer
 - **Generic C**: macros that defeat a syntax tree (loop headers, annotations) are derived from the scanned tree's own `#define`s — no project-specific code, any repository or any carved-out part of one
-- **Function Complexity**: structure (cyclomatic, cognitive, nesting, loops), call-graph relationships, sound growth estimates (O, Ω) with every unknown counted by its reason, and readings tied to a definition's hash — see [Complexity](#complexity)
+- **Function Complexity**: structure (cyclomatic, cognitive, nesting, loops), call-graph relationships, growth estimates (O, Ω) read from the syntax, each with the assumptions it rests on and every unknown counted by its reason, and readings tied to a definition's hash — see [Complexity](#complexity) and [Known Limitations](#known-limitations)
 - **Survey**: `ontosys survey` reads every `.ontosys/` folder on a machine into a private ledger and reports progression
 - **Semantic Diff**: `ontosys diff` compares two builds entity by entity, in ontology terms
 - **Deterministic Output**: version-independent IRIs and canonical triple order — identical sources give byte-identical graphs
@@ -185,10 +185,31 @@ are in `https://ontosys.io/ns/code#` and declared, with SHACL shapes, in
   parse errors). Loops, blockers and findings (a linear call in a loop
   condition, list membership, concatenation or a sort inside a loop, nested
   loops over one collection, recursion that recomputes) are evidence nodes.
-- **Costs** come from `ontology/cost-catalog.ttl` (worst case first; average
-  and amortized costs are recorded, never used as bounds), from C macro
-  bodies, and from a repository's own `.ontosys/cost-catalog.ttl`, which may
-  add project functions and caps on sizes:
+
+  The estimates are read from the syntax, not proved. A counted loop is
+  classified by its start, the direction of its step and its whole bound
+  (`for (i = n; i > 0; i--)` is linear in `n`; a bound of `2 * n` is not a
+  constant); a loop that runs while a value holds counts only when its body
+  advances that value along a structure (`p = p->next`, `stack.pop()`), and
+  a bound whose collection grows in the body is data-dependent. A loop that
+  may run zero times (an unknown start, a generator expression, a constant
+  range that is empty) adds nothing to the lower bound; neither does code
+  after a `continue` or `break` in its loop, inside a lambda, or after a
+  `return` inside a loop. Calling a generator or async function costs its
+  caller no lower bound. A function handed to a higher-order call (`qsort`'s
+  comparator, `map(f, xs)`, a lambda given to `sort`) is charged as many
+  times as the catalog says the call may run it; a callback the analysis
+  cannot name is an indirect call. Each classified loop records the
+  `LoopShape` assumption: its bound holds only if nothing outside the text
+  changes the loop's variables.
+- **Costs** come from `ontology/cost-catalog.ttl` (worst case first, for any
+  implementation; average and amortized costs are recorded, never used as
+  bounds), from C macro bodies, and from a repository's own
+  `.ontosys/cost-catalog.ttl`. An overlay entry states the cost of one of the
+  repository's own functions or macros for its callers (recorded as the
+  `OverlayCost` assumption; the function's own estimate stays derived from
+  its body), and a size cap applies to a size only when every name in it is
+  capped:
 
   ```turtle
   @prefix code: <https://ontosys.io/ns/code#> .
@@ -199,6 +220,9 @@ are in `https://ontosys.io/ns/code#` and declared, with SHACL shapes, in
 
   The build-meta unlock list names which uncatalogued callees keep the most
   functions without an upper bound, so the most useful entries are obvious.
+  build-meta also records the overlay's and the claims' sha256 (their edits
+  are input changes, not tool changes) and the time each phase took
+  (`timings_ms`, with `call_edges`).
 - **Claims**: a reading of a function, written to
   `.ontosys/claims/complexity.ttl` with the `code:definitionSha256` it was made
   against, is copied into complexity.nt on every build as current while the
@@ -316,6 +340,35 @@ reachability outside the store.
 - **Macro-generated and `#ifdef`-split definitions** are not seen (≈0.08% of
   function definitions on PostgreSQL 19, measured against an independent
   count).
+- **Growth estimates are syntactic.** They rest on the assumptions each
+  estimate records, and on these limits:
+  - *One size variable.* Every size is `n`, so `O(n·m)` reads `O(n²)`; the
+    size expressions name each one.
+  - *Receivers of unknown type* take the worst catalog entry of the name:
+    `x in y` is `O(n²)` because `y` may be a string (substring search).
+  - *Element comparisons cost O(1).* Sorting strings, or `in` over a list of
+    strings, does not count the length of each element.
+  - *Operators are not costed*: comparing sequences (`a == b` on lists),
+    `del`, slice assignment, `+` and `*` on sequences, spread (`...xs`),
+    dispatch to a class's `__len__`/`__str__`/`__eq__` through `len()`,
+    `str()` or `==`, and big-integer arithmetic (`pow` is uncatalogued).
+  - *Aliases and callees.* A collection grown through another name, or a
+    loop variable changed by a callee, is not seen; `LoopShape` says so.
+  - *Accumulation* is modelled for catalog calls that grow an argument
+    (`strcat`, `strncat`); string `+=` in a loop is a finding, not a bound.
+  - *Iterators.* A `for` over an iterator is linear in its size, which may be
+    infinite (`itertools.count()`); `next()` is O(1).
+  - *Name resolution.* Rust, Python and JS/TS calls resolve by a unique name
+    within the language, so a same-named function elsewhere may be bound; C
+    picks the nearest directory (see above). A name defined by a function the
+    scan could not attach is uncosted.
+  - *Early exits through callees* (`exit`, `abort`, `panic!`, `longjmp`,
+    exceptions) do not lower the lower bound.
+  - *Macros.* Rust macro arguments are re-read as expressions; a macro whose
+    arguments are not expressions but hold a call is an indirect call. A C
+    loop macro is classified by its own expanded header; one whose name is
+    under five characters cannot be rewritten in place (listed as
+    `short_loop_macros` in build-meta), so its uses stay parse errors.
 - The `type_state_demo` and `ingest_repo` examples do not compile (they
   predate the current module layout).
 

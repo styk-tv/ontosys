@@ -25,6 +25,9 @@ pub struct FunctionFacts {
     pub loops: Vec<super::loops::LoopFact>,
     /// Syntax the findings need.
     pub evidence: super::findings::Evidence,
+    /// An abstract method or a stub body (`...`, `raise NotImplementedError`,
+    /// `todo!()`): it states no cost of its own.
+    pub stub: bool,
 }
 
 /// Facts for every named function with a body, in document order, and the
@@ -54,6 +57,8 @@ pub fn scan_file(rel_path: &str, bytes: &[u8], grammar: Grammar) -> (Vec<Functio
             let name = text(name_node, bytes).to_string();
             let mut tier_a = analyze(body, bytes, &name, profile);
             tier_a.memoized = super::engine::detect_memo(def, body, bytes, &name, &tier_a, profile);
+            tier_a.deferred |= is_async(def);
+            let stub = is_stub(def, body, bytes, profile);
             out.push(FunctionFacts {
                 loops: super::loops::classify_all(body, bytes, grammar, &tier_a.loops),
                 evidence: super::findings::evidence(body, bytes, grammar, &tier_a.loops),
@@ -63,6 +68,7 @@ pub fn scan_file(rel_path: &str, bytes: &[u8], grammar: Grammar) -> (Vec<Functio
                 file: rel_path.to_string(),
                 name,
                 grammar,
+                stub,
             });
         }
         let enters_function =
@@ -74,6 +80,51 @@ pub fn scan_file(rel_path: &str, bytes: &[u8], grammar: Grammar) -> (Vec<Functio
         }
     }
     (out, errors)
+}
+
+/// `async def`, `async function`, `async fn`: a call returns before the body runs.
+fn is_async(def: Node) -> bool {
+    let mut c = def.walk();
+    let kids: Vec<Node> = def.children(&mut c).collect();
+    kids.iter().any(|k| {
+        k.kind() == "async"
+            || (k.kind() == "function_modifiers" && {
+                let mut c2 = k.walk();
+                let found = k.children(&mut c2).any(|m| m.kind() == "async");
+                found
+            })
+    })
+}
+
+/// An abstract method or a body that only stands in for one: a docstring
+/// and then `...`, `raise NotImplementedError`, or `todo!()` /
+/// `unimplemented!()`; or a function decorated `@abstractmethod`/`@overload`.
+fn is_stub(def: Node, body: Node, src: &[u8], profile: &dyn super::engine::Profile) -> bool {
+    let head_start = profile.definition_start(def).min(body.start_byte());
+    let head = String::from_utf8_lossy(&src[head_start..body.start_byte()]);
+    if head.contains("abstractmethod")
+        || head.contains("@overload")
+        || head.contains("typing.overload")
+    {
+        return true;
+    }
+    let mut c = body.walk();
+    let stmts: Vec<Node> = body
+        .named_children(&mut c)
+        .filter(|s| !s.kind().contains("comment"))
+        .collect();
+    let docstring = |s: &Node| {
+        s.kind() == "expression_statement" && s.named_child(0).is_some_and(|x| x.kind() == "string")
+    };
+    let rest: Vec<&Node> = stmts.iter().filter(|s| !docstring(s)).collect();
+    let [only] = rest.as_slice() else {
+        return false;
+    };
+    let t = text(**only, src).trim();
+    t == "..."
+        || t.starts_with("raise NotImplementedError")
+        || t.starts_with("todo!")
+        || t.starts_with("unimplemented!")
 }
 
 /// Named boundaries that hold functions rather than being one.

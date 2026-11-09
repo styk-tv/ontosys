@@ -52,6 +52,8 @@ pub enum Exit {
     Return,
     /// `break`; a label means it can leave enclosing loops too.
     Break(Option<String>),
+    /// `continue`: the rest of the loop's body may not run this time.
+    Continue(Option<String>),
     Goto(String),
     Throw,
     /// May leave the function on any path (Rust `?`).
@@ -91,6 +93,20 @@ pub trait Profile: Sync {
     fn label(&self, n: Node, src: &[u8]) -> Option<String>;
     /// First byte of the definition, including attached decorators/attributes.
     fn definition_start(&self, def: Node) -> usize;
+    /// A comprehension: its loop clauses nest in order, and its body runs in
+    /// the innermost (Python `[f(x) for x in xs for y in ys if p]`).
+    fn comprehension(&self, _n: Node) -> bool {
+        false
+    }
+    /// A node that makes its function a generator (`yield`).
+    fn defers(&self, _n: Node) -> bool {
+        false
+    }
+    /// Macro arguments the grammar keeps as opaque tokens, re-read as code:
+    /// `(start byte of the tokens, wrapped source, offset of the tokens in it)`.
+    fn reparse_macro(&self, _n: Node, _src: &[u8]) -> Option<(usize, String, usize)> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,6 +123,9 @@ pub struct CallSite {
     pub conditional: bool,
     /// The loop whose condition this call is in.
     pub in_condition_of: Option<u32>,
+    /// Start byte of the innermost anonymous function around the call: it
+    /// runs only if something calls that function.
+    pub in_anonymous: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,6 +156,8 @@ pub struct TierA {
     /// A cache guards the recursion: a cache decorator, or a check reading a
     /// memo/cache before the first self-call. Set by [`detect_memo`].
     pub memoized: bool,
+    /// A generator or async function: a call returns before the body runs.
+    pub deferred: bool,
 }
 
 /// Whether a recursive function is memoised: a cache decorator above it
@@ -199,12 +220,31 @@ struct Frame<'t> {
     cond_of: Option<u32>,
     breakable: Breakable,
     parent_bool: Option<String>,
+    /// Start of the innermost anonymous function entered.
+    anon_start: Option<usize>,
 }
 
 /// Analyse one function body. `name` identifies self-calls.
 pub fn analyze(body: Node, src: &[u8], name: &str, profile: &dyn Profile) -> TierA {
+    analyze_at(body, src, name, profile, 0)
+}
+
+/// Re-read macro arguments at most this deep.
+const MAX_REPARSE_DEPTH: u32 = 6;
+
+fn analyze_at(
+    body: Node,
+    src: &[u8],
+    name: &str,
+    profile: &dyn Profile,
+    reparse_depth: u32,
+) -> TierA {
     use super::profiles::{children_with_fields, short_text};
     let mut a = TierA::default();
+    // Per loop: the first `continue`/`break` in its body; what follows may not run.
+    let mut cuts: Vec<Option<usize>> = Vec::new();
+    // Loops created ahead for a comprehension's clauses, by start byte.
+    let mut precreated: std::collections::HashMap<usize, u32> = std::collections::HashMap::new();
     let mut labels: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     let mut gotos: Vec<(String, usize, usize)> = Vec::new();
     let mut first_conditional_exit: Option<usize> = None;
@@ -221,6 +261,7 @@ pub fn analyze(body: Node, src: &[u8], name: &str, profile: &dyn Profile) -> Tie
         cond_of: None,
         breakable: Breakable::Nothing,
         parent_bool: None,
+        anon_start: None,
     }];
     while let Some(f) = stack.pop() {
         let n = f.node;
@@ -235,7 +276,17 @@ pub fn analyze(body: Node, src: &[u8], name: &str, profile: &dyn Profile) -> Tie
             continue;
         }
         a.max_nesting = a.max_nesting.max(f.depth);
-        let conditional = f.in_branch || first_conditional_exit.is_some_and(|x| n.start_byte() > x);
+        let cut = f
+            .loop_path
+            .iter()
+            .any(|&i| cuts[i as usize].is_some_and(|x| n.start_byte() > x));
+        let conditional = f.in_branch
+            || f.anon > 0
+            || cut
+            || first_conditional_exit.is_some_and(|x| n.start_byte() > x);
+        if f.anon == 0 && profile.defers(n) {
+            a.deferred = true;
+        }
 
         cyclomatic += profile.decisions(n, src);
         if profile.is_statement(n) {
@@ -259,14 +310,32 @@ pub fn analyze(body: Node, src: &[u8], name: &str, profile: &dyn Profile) -> Tie
             Cog::NestsOnly | Cog::None => {}
         }
 
+        let mut cut_at = |i: u32, at: usize| {
+            let c = &mut cuts[i as usize];
+            *c = Some(c.map_or(at, |x| x.min(at)));
+        };
         match profile.exit(n, src) {
             Exit::None => {}
             Exit::Break(None) => {
                 if let Breakable::Loop(i) = f.breakable {
                     a.loops[i as usize].early_exit = true;
+                    cut_at(i, n.start_byte());
+                }
+            }
+            Exit::Continue(None) => {
+                if let Some(&i) = f.loop_path[f.exit_scope.min(f.loop_path.len())..].last() {
+                    cut_at(i, n.start_byte());
+                }
+            }
+            Exit::Continue(Some(_)) => {
+                for &i in &f.loop_path[f.exit_scope.min(f.loop_path.len())..] {
+                    cut_at(i, n.start_byte());
                 }
             }
             exit => {
+                for &i in &f.loop_path[f.exit_scope.min(f.loop_path.len())..] {
+                    cut_at(i, n.start_byte());
+                }
                 for &i in &f.loop_path[f.exit_scope..] {
                     a.loops[i as usize].early_exit = true;
                 }
@@ -276,7 +345,10 @@ pub fn analyze(body: Node, src: &[u8], name: &str, profile: &dyn Profile) -> Tie
                     }
                 }
                 let leaves_function = matches!(exit, Exit::Return | Exit::Throw | Exit::Goto(_));
-                let conditional_exit = exit == Exit::Maybe || (leaves_function && f.in_branch);
+                // Inside a loop body an exit may not run: the loop may not.
+                let in_loop = f.loop_path.len() > f.exit_scope;
+                let conditional_exit =
+                    exit == Exit::Maybe || (leaves_function && (f.in_branch || in_loop));
                 if conditional_exit && f.anon == 0 && first_conditional_exit.is_none() {
                     first_conditional_exit = Some(n.start_byte());
                 }
@@ -317,25 +389,85 @@ pub fn analyze(body: Node, src: &[u8], name: &str, profile: &dyn Profile) -> Tie
                 loop_path: f.loop_path.clone(),
                 conditional,
                 in_condition_of: f.cond_of,
+                in_anonymous: f.anon_start,
             });
+            if kind == CallKind::Macro {
+                if let Some(extra) =
+                    reparse_macro_calls(n, src, name, profile, &f, conditional, reparse_depth)
+                {
+                    a.calls.extend(extra);
+                }
+            }
         }
 
         let is_loop = profile.is_loop(n);
         let mut this_loop = None;
         if is_loop {
-            let idx = a.loops.len() as u32;
-            let depth = f.loop_path.len() as u32 + 1;
-            a.max_loop_nesting = a.max_loop_nesting.max(depth);
-            a.loops.push(LoopSite {
-                line: n.start_position().row + 1,
-                start_byte: n.start_byte(),
-                end_byte: n.end_byte(),
-                depth,
-                parent: f.loop_path.last().copied(),
-                early_exit: false,
-                conditional,
-            });
-            this_loop = Some(idx);
+            if let Some(&idx) = precreated.get(&n.start_byte()) {
+                this_loop = Some(idx);
+            } else {
+                let idx = a.loops.len() as u32;
+                let depth = f.loop_path.len() as u32 + 1;
+                a.max_loop_nesting = a.max_loop_nesting.max(depth);
+                a.loops.push(LoopSite {
+                    line: n.start_position().row + 1,
+                    start_byte: n.start_byte(),
+                    end_byte: n.end_byte(),
+                    depth,
+                    parent: f.loop_path.last().copied(),
+                    early_exit: false,
+                    conditional,
+                });
+                cuts.push(None);
+                this_loop = Some(idx);
+            }
+        }
+        // A comprehension: one loop per clause, each inside the one before;
+        // its body and filters run inside them.
+        let mut comprehension: Option<Vec<(Vec<u32>, bool)>> = None;
+        if profile.comprehension(n) {
+            let kids = children_with_fields(n);
+            let mut path = f.loop_path.clone();
+            let mut clauses_before: Vec<Vec<u32>> = Vec::new();
+            for (child, _) in &kids {
+                clauses_before.push(path.clone());
+                if profile.is_loop(*child) {
+                    let idx = a.loops.len() as u32;
+                    let depth = path.len() as u32 + 1;
+                    a.max_loop_nesting = a.max_loop_nesting.max(depth);
+                    a.loops.push(LoopSite {
+                        line: child.start_position().row + 1,
+                        start_byte: child.start_byte(),
+                        end_byte: child.end_byte(),
+                        depth,
+                        parent: path.last().copied(),
+                        early_exit: false,
+                        conditional,
+                    });
+                    cuts.push(None);
+                    precreated.insert(child.start_byte(), idx);
+                    path.push(idx);
+                }
+            }
+            // Filters (`if p`) guard what comes after them; the body comes
+            // first in the text but runs innermost, after every filter.
+            let is_filter = |c: &Node, fl: Option<&str>| {
+                c.is_named() && fl != Some("body") && !profile.is_loop(*c)
+            };
+            let any_filter = kids.iter().any(|(c, fl)| is_filter(c, *fl));
+            let mut filtered = false;
+            let mut scopes = Vec::with_capacity(kids.len());
+            for (k, (child, field)) in kids.iter().enumerate() {
+                if *field == Some("body") {
+                    scopes.push((path.clone(), any_filter));
+                } else {
+                    scopes.push((clauses_before[k].clone(), filtered));
+                    if is_filter(child, *field) {
+                        filtered = true;
+                    }
+                }
+            }
+            comprehension = Some(scopes);
         }
         let once = if is_loop {
             profile.loop_once_field(n)
@@ -350,7 +482,7 @@ pub fn analyze(body: Node, src: &[u8], name: &str, profile: &dyn Profile) -> Tie
         let is_switch = profile.is_switch(n);
 
         let kids = children_with_fields(n);
-        for (child, field) in kids.into_iter().rev() {
+        for (k, (child, field)) in kids.into_iter().enumerate().rev() {
             let alternative = field == Some("alternative");
             let (nesting, depth) = match cog {
                 Cog::Nesting | Cog::ElseIf if alternative => (f.nesting, f.depth),
@@ -361,6 +493,12 @@ pub fn analyze(body: Node, src: &[u8], name: &str, profile: &dyn Profile) -> Tie
             let mut loop_path = f.loop_path.clone();
             let mut cond_of = f.cond_of;
             let mut breakable = f.breakable;
+            let mut guarded = false;
+            if let Some(scopes) = &comprehension {
+                loop_path = scopes[k].0.clone();
+                guarded = scopes[k].1;
+                breakable = Breakable::Nothing;
+            }
             if let Some(idx) = this_loop {
                 if once.is_none() || field != once {
                     loop_path.push(idx);
@@ -374,24 +512,26 @@ pub fn analyze(body: Node, src: &[u8], name: &str, profile: &dyn Profile) -> Tie
             } else if is_switch {
                 breakable = Breakable::Switch;
             }
-            let (anon, exit_scope) = if anonymous {
+            let (anon, exit_scope, anon_start) = if anonymous {
                 breakable = Breakable::Nothing;
-                (f.anon + 1, loop_path.len())
+                (f.anon + 1, loop_path.len(), Some(n.start_byte()))
             } else {
-                (f.anon, f.exit_scope)
+                (f.anon, f.exit_scope, f.anon_start)
             };
+
             stack.push(Frame {
                 node: child,
                 parent: Some(n),
                 nesting,
                 depth,
-                in_branch: f.in_branch || profile.is_conditional_child(n, field, src),
+                in_branch: f.in_branch || guarded || profile.is_conditional_child(n, field, src),
                 loop_path,
                 anon,
                 exit_scope,
                 cond_of,
                 breakable,
                 parent_bool: bool_op.clone(),
+                anon_start,
             });
         }
     }
@@ -407,6 +547,105 @@ pub fn analyze(body: Node, src: &[u8], name: &str, profile: &dyn Profile) -> Tie
     }
     a.backward_gotos.sort_unstable();
     a
+}
+
+/// Calls inside a macro's arguments, re-read as code (Rust keeps them as an
+/// opaque token tree). They take the macro's place: its loops, its branch,
+/// its byte offsets in the file. `None` when the profile keeps none; when the
+/// arguments do not parse but hold something call-shaped, one indirect call
+/// stands for them.
+fn reparse_macro_calls(
+    n: Node,
+    src: &[u8],
+    name: &str,
+    profile: &dyn Profile,
+    f: &Frame,
+    conditional: bool,
+    depth: u32,
+) -> Option<Vec<CallSite>> {
+    let (tokens_start, wrapped, offset) = profile.reparse_macro(n, src)?;
+    let line0 = n.start_position().row;
+    let row_of = |byte: usize| -> usize {
+        line0
+            + src[n.start_byte()..byte.min(src.len())]
+                .iter()
+                .filter(|&&b| b == b'\n')
+                .count()
+    };
+    let opaque = || {
+        let text = String::from_utf8_lossy(&src[n.start_byte()..n.end_byte()]);
+        let args_from = text.find('!').map_or(0, |b| b + 2);
+        // A lowercase name right before `(`: a call (`Some(_)` is a pattern).
+        let call_shaped = text.char_indices().any(|(i, c)| {
+            if c != '(' || i < args_from {
+                return false;
+            }
+            let word: String = text[..i]
+                .chars()
+                .rev()
+                .take_while(|p| p.is_alphanumeric() || *p == '_')
+                .collect();
+            word.chars()
+                .last()
+                .is_some_and(|w| w.is_ascii_lowercase() || w == '_')
+        });
+        call_shaped.then(|| {
+            vec![CallSite {
+                kind: CallKind::Indirect,
+                callee: format!(
+                    "calls inside {} arguments",
+                    text.split('!').next().unwrap_or("").trim()
+                ),
+                receiver: None,
+                args: Vec::new(),
+                line: line0 + 1,
+                start_byte: n.start_byte(),
+                args_range: (n.start_byte(), n.end_byte()),
+                loop_path: f.loop_path.clone(),
+                conditional,
+                in_condition_of: f.cond_of,
+                in_anonymous: f.anon_start,
+            }]
+        })
+    };
+    if depth >= MAX_REPARSE_DEPTH {
+        return opaque();
+    }
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(&profile.grammar().language()?).ok()?;
+    let tree = parser.parse(&wrapped, None)?;
+    if tree.root_node().has_error() {
+        return opaque();
+    }
+    let body = tree
+        .root_node()
+        .named_child(0)?
+        .child_by_field_name("body")?;
+    let inner = analyze_at(body, wrapped.as_bytes(), name, profile, depth + 1);
+    if !inner.loops.is_empty() {
+        return opaque();
+    }
+    let at = |b: usize| tokens_start + b.saturating_sub(offset);
+    Some(
+        inner
+            .calls
+            .into_iter()
+            .filter(|c| c.start_byte >= offset)
+            .map(|c| {
+                let start = at(c.start_byte);
+                CallSite {
+                    line: row_of(start) + 1,
+                    start_byte: start,
+                    args_range: (at(c.args_range.0), at(c.args_range.1)),
+                    loop_path: f.loop_path.clone(),
+                    conditional: conditional || c.conditional,
+                    in_condition_of: f.cond_of,
+                    in_anonymous: c.in_anonymous.map(at).or(f.anon_start),
+                    ..c
+                }
+            })
+            .collect(),
+    )
 }
 
 /// sha256 (lowercase hex) of the definition's bytes as they are in the file.
@@ -559,6 +798,27 @@ mod tests {
             !b.loops[0].early_exit,
             "a break inside a switch leaves the switch, not the loop"
         );
+    }
+
+    /// Final review C9: `continue`/`break` cut the rest of their loop's body;
+    /// an exit inside a loop body is a conditional exit.
+    #[test]
+    fn continue_break_and_returns_in_loops_c() {
+        let a = c("void f(int *a, int n) { for (int i = 0; i < n; i++) { if (a[i]) continue; g(i); } h(); for (int i = 0; i < n; i++) { if (a[i]) break; k(i); } m(); for (int j = 0; j < n; j++) { switch (a[j]) { case 0: continue; default: break; } q(); } r(); for (int j = 0; j < n; j++) { return; } z(); }");
+        let site = |name: &str| a.calls.iter().find(|c| c.callee == name).unwrap().clone();
+        assert!(site("g").conditional, "after a continue");
+        assert!(
+            !site("h").conditional,
+            "a continue ends nothing outside its loop"
+        );
+        assert!(site("k").conditional, "after a break");
+        assert!(!site("m").conditional);
+        assert!(
+            site("q").conditional,
+            "a continue inside a switch continues the loop"
+        );
+        assert!(!site("r").conditional);
+        assert!(site("z").conditional, "a return inside a loop may not run");
     }
 
     #[test]

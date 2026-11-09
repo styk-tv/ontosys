@@ -133,8 +133,10 @@ code:receiverType a owl:DatatypeProperty ; rdfs:label "receiver type" ; rdfs:com
 code:worstClass a owl:ObjectProperty ; rdfs:label "worst class" ; rdfs:comment "Worst-case growth: what estimates use." .
 code:averageClass a owl:ObjectProperty ; rdfs:label "average class" ; rdfs:comment "Average growth, where it differs; recorded as an assumption, never used as a bound." .
 code:amortizedClass a owl:ObjectProperty ; rdfs:label "amortized class" ; rdfs:comment "Amortized growth, where it differs; recorded as an assumption, never used as a bound." .
-code:sizeOf a owl:DatatypeProperty ; rdfs:label "size of" ; rdfs:comment "Which size the cost grows with: arg0, arg1, ..., receiver, or output (the output written)." ; rdfs:range xsd:string .
+code:sizeOf a owl:DatatypeProperty ; rdfs:label "size of" ; rdfs:comment "Which size the cost grows with: arg0, arg1, ..., receiver, or output (the output written). Several values add up." ; rdfs:range xsd:string .
 code:iterates a owl:DatatypeProperty ; rdfs:label "iterates" ; rdfs:comment "The call runs its callback once per element of this size (receiver or argN)." ; rdfs:range xsd:string .
+code:callbackArg a owl:DatatypeProperty ; rdfs:label "callback argument" ; rdfs:comment "The argument holding the function the call invokes: argN, or a keyword such as key." ; rdfs:range xsd:string .
+code:growsArg a owl:DatatypeProperty ; rdfs:label "grows argument" ; rdfs:comment "An argument the call appends to (argN or receiver), so its size grows across a loop." ; rdfs:range xsd:string .
 code:source a owl:DatatypeProperty ; rdfs:label "source" ; rdfs:comment "Where the cost comes from (the language or library documentation, or who read the code)." ; rdfs:range xsd:string .
 code:sizeName a owl:DatatypeProperty ; rdfs:label "size name" ; rdfs:comment "A size expression as written in code." ; rdfs:range xsd:string .
 code:cappedBy a owl:DatatypeProperty ; rdfs:label "capped by" ; rdfs:comment "The constant that caps the named size." ; rdfs:range xsd:string .
@@ -164,6 +166,7 @@ code:ConstantNameAssumption a owl:NamedIndividual, code:AssumptionKind ; rdfs:la
 code:LoopShapeAssumption a owl:NamedIndividual, code:AssumptionKind ; rdfs:label "a classified loop runs at most its bound" .
 code:CatalogCaseAssumption a owl:NamedIndividual, code:AssumptionKind ; rdfs:label "a catalog average or amortized cost is cheaper than the worst case used" .
 code:OverlayCapAssumption a owl:NamedIndividual, code:AssumptionKind ; rdfs:label "a repository overlay caps a size" .
+code:OverlayCostAssumption a owl:NamedIndividual, code:AssumptionKind ; rdfs:label "a repository overlay states a function's or macro's cost" .
 code:BuiltinReceiverAssumption a owl:NamedIndividual, code:AssumptionKind ; rdfs:label "a method's receiver is a built-in type or a repository class" .
 code:MergedDefinitionsAssumption a owl:NamedIndividual, code:AssumptionKind ; rdfs:label "several definitions share one IRI; bounds combine over all" .
 
@@ -228,7 +231,7 @@ code:GrowthEstimateShape a sh:NodeShape ;
                 [ sh:path code:lowerClass ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( code:O1 code:OLogN code:ON code:ONLogN code:ON2 code:ON3 code:ONK code:OExp ) ] ,
                 [ sh:path code:upperClass ; sh:maxCount 1 ; sh:in ( code:O1 code:OLogN code:ON code:ONLogN code:ON2 code:ON3 code:ONK code:OExp ) ] ,
                 [ sh:path code:blockedBy ; sh:in ( code:UncostedCall code:IndirectCall code:AmbiguousCall code:CyclicCall code:BlockedCallee code:DataDependentLoop code:UnboundedLoop code:UnstructuredFlow code:Unparsed ) ] ,
-                [ sh:path code:assumes ; sh:in ( code:ConstantNameAssumption code:LoopShapeAssumption code:CatalogCaseAssumption code:OverlayCapAssumption code:BuiltinReceiverAssumption code:MergedDefinitionsAssumption ) ] ,
+                [ sh:path code:assumes ; sh:in ( code:ConstantNameAssumption code:LoopShapeAssumption code:CatalogCaseAssumption code:OverlayCapAssumption code:OverlayCostAssumption code:BuiltinReceiverAssumption code:MergedDefinitionsAssumption ) ] ,
                 [ sh:path code:degree ; sh:maxCount 1 ; sh:datatype xsd:integer ] ,
                 [ sh:path code:base ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 2 ] ,
                 [ sh:path code:exactForm ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
@@ -282,8 +285,10 @@ code:CostEntryShape a sh:NodeShape ;
                 [ sh:path code:worstClass ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( code:O1 code:OLogN code:ON code:ONLogN code:ON2 code:ON3 ) ] ,
                 [ sh:path code:averageClass ; sh:maxCount 1 ; sh:in ( code:O1 code:OLogN code:ON code:ONLogN code:ON2 code:ON3 ) ] ,
                 [ sh:path code:amortizedClass ; sh:maxCount 1 ; sh:in ( code:O1 code:OLogN code:ON code:ONLogN code:ON2 code:ON3 ) ] ,
-                [ sh:path code:sizeOf ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+                [ sh:path code:sizeOf ; sh:datatype xsd:string ] ,
                 [ sh:path code:iterates ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+                [ sh:path code:callbackArg ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+                [ sh:path code:growsArg ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
                 [ sh:path code:source ; sh:minCount 1 ; sh:datatype xsd:string ] .
 
 code:SizeCapShape a sh:NodeShape ;

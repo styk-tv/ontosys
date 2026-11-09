@@ -8,11 +8,14 @@
   `#define`s; C call resolution uses paths only. Any repository, or a
   carved-out part of one, builds the same way.
 - **Complexity** for C, Rust, Python, JavaScript, TypeScript and TSX:
-  structure per function in graph.nt; call graph, growth estimates (sound
-  upper and lower classes, every unknown with its reason), loops, blockers,
-  findings and claims in the new `data/complexity.nt`; the vocabulary and
-  SHACL shapes in `ontology/code.ttl`; a cost catalog with a per-repository
-  overlay; an unlock list in build-meta.
+  structure per function in graph.nt; call graph, growth estimates (upper
+  and lower classes read from the syntax, each with the assumptions it rests
+  on and every unknown with its reason; see Known Limitations), loops,
+  blockers, findings and claims in the new `data/complexity.nt`; the
+  vocabulary and SHACL shapes in `ontology/code.ttl`; a cost catalog
+  (callbacks and growing arguments included) with a per-repository overlay
+  that may state the repository's own functions and macros; an unlock list,
+  the overlay's and claims' sha256 and per-phase timings in build-meta.
 - **`ontosys survey`**: read every `.ontosys/` on a machine into a private
   ledger; progression report; rebuild in a temporary clone.
 - build-meta names the ontosys commit that wrote it.

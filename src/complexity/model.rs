@@ -23,6 +23,9 @@ pub enum Target {
     Ambiguous(Vec<usize>),
     /// A call through a pointer, callback or computed callee.
     Indirect,
+    /// A name the scan saw defined but could not attach to a declaration:
+    /// its cost is not known, and a catalog entry of the same name is not it.
+    Unattached(String),
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +38,8 @@ pub struct DefRec {
     pub definition_sha256: Option<String>,
     /// Parallel to `tier_a.calls`.
     pub targets: Vec<Target>,
+    /// An abstract method or stub body: no cost of its own.
+    pub stub: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -114,6 +119,7 @@ pub fn model_from_c(
                 evidence: func.evidence.clone(),
                 definition_sha256: func.definition_sha256.clone(),
                 targets: Vec::new(),
+                stub: false,
             };
             let i = m.add_def(
                 fn_iri(project, &f.path, &func.name),
@@ -186,6 +192,21 @@ fn family(g: Grammar) -> u8 {
 /// repository function only when exactly one function of that name exists in
 /// the same language family (JavaScript, TypeScript and TSX are one family).
 pub fn model_add_scanned(m: &mut Model, attached: Vec<(Iri, FunctionFacts)>) {
+    model_add_scanned_with(m, attached, &std::collections::BTreeSet::new());
+}
+
+/// As [`model_add_scanned`]; `unattached` names `(grammar, name)` of
+/// functions the scan saw but could not attach. A call to such a name is
+/// [`Target::Unattached`]: an unseen definition may be the one it runs.
+pub fn model_add_scanned_with(
+    m: &mut Model,
+    attached: Vec<(Iri, FunctionFacts)>,
+    unattached: &std::collections::BTreeSet<(Grammar, String)>,
+) {
+    let unattached: std::collections::HashSet<(u8, &str)> = unattached
+        .iter()
+        .map(|(g, n)| (family(*g), n.as_str()))
+        .collect();
     let first = m.fns.len();
     for (iri, f) in attached {
         let def = DefRec {
@@ -194,6 +215,7 @@ pub fn model_add_scanned(m: &mut Model, attached: Vec<(Iri, FunctionFacts)>) {
             evidence: f.evidence,
             definition_sha256: f.definition_sha256,
             targets: Vec::new(),
+            stub: f.stub,
         };
         m.add_def(iri, &f.name, &f.file, f.grammar, def);
     }
@@ -214,16 +236,20 @@ pub fn model_add_scanned(m: &mut Model, attached: Vec<(Iri, FunctionFacts)>) {
                         .calls
                         .iter()
                         .map(|c| match c.kind {
-                            CallKind::Direct | CallKind::Method => {
-                                match by_name.get(&(family(f.grammar), c.callee.as_str())) {
+                            // `x in y` dispatches to a repository `__contains__` as
+                            // much as a method call does.
+                            CallKind::Direct | CallKind::Method | CallKind::Operator => {
+                                let key = (family(f.grammar), c.callee.as_str());
+                                if unattached.contains(&key) {
+                                    return Target::Unattached(c.callee.clone());
+                                }
+                                match by_name.get(&key) {
                                     Some(v) if v.len() == 1 => Target::Repo(v[0]),
                                     Some(v) => Target::Ambiguous(v.clone()),
                                     None => Target::External(c.callee.clone()),
                                 }
                             }
-                            CallKind::Operator | CallKind::Macro => {
-                                Target::External(c.callee.clone())
-                            }
+                            CallKind::Macro => Target::External(c.callee.clone()),
                             CallKind::Indirect => Target::Indirect,
                         })
                         .collect()

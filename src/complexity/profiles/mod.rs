@@ -53,6 +53,7 @@ mod tests {
         "function_definition",
         "function_item",
         "function_declaration",
+        "generator_function_declaration",
         "method_definition",
     ];
 
@@ -142,13 +143,21 @@ mod tests {
 
     #[test]
     fn js_logical_assignments_are_decisions() {
-        let a = tier_a(Grammar::JavaScript, "function f(e, r) { e.kind ||= r.kind; e.at ??= r.at; e.ok &&= r.ok; e.n += 1; }", "f");
+        let a = tier_a(
+            Grammar::JavaScript,
+            "function f(e, r) { e.kind ||= r.kind; e.at ??= r.at; e.ok &&= r.ok; e.n += 1; }",
+            "f",
+        );
         assert_eq!(a.cyclomatic, 4);
     }
 
     #[test]
     fn match_guards_are_decisions() {
-        let a = tier_a(Grammar::Rust, "fn f(c: u8, n: usize) -> u8 { match c { b'%' if n > 2 => 1, b'+' => 2, _ => 3 } }", "f");
+        let a = tier_a(
+            Grammar::Rust,
+            "fn f(c: u8, n: usize) -> u8 { match c { b'%' if n > 2 => 1, b'+' => 2, _ => 3 } }",
+            "f",
+        );
         assert_eq!(a.cyclomatic, 4, "two arms past the first, plus one guard");
         let p = tier_a(Grammar::Python, "def f(x):\n    match x:\n        case [a] if a > 0:\n            return 1\n        case _:\n            return 0\n", "f");
         assert_eq!(p.cyclomatic, 3, "one non-wildcard case, plus one guard");
@@ -156,7 +165,11 @@ mod tests {
 
     #[test]
     fn rust_let_else_is_a_decision() {
-        let a = tier_a(Grammar::Rust, "fn f(o: Option<u8>) -> u8 { let Some(x) = o else { return 0; }; x }", "f");
+        let a = tier_a(
+            Grammar::Rust,
+            "fn f(o: Option<u8>) -> u8 { let Some(x) = o else { return 0; }; x }",
+            "f",
+        );
         assert_eq!(a.cyclomatic, 2);
     }
 
@@ -335,6 +348,142 @@ mod tests {
         assert_eq!(
             sha_start(Grammar::TypeScript, src, "run"),
             sha_of(&src.as_bytes()[start..end])
+        );
+    }
+
+    /// A comprehension's body and later clauses run inside its loops
+    /// (final review C4).
+    #[test]
+    fn python_comprehension_scopes_nest() {
+        let a = tier_a(
+            Grammar::Python,
+            "def f(xs):\n    return [g(x) for x in xs for y in k(x) if h(y)]\n",
+            "f",
+        );
+        assert_eq!((a.loop_count, a.max_loop_nesting), (2, 2));
+        assert_eq!(a.loops[1].parent, Some(0));
+        let site = |n: &str| a.calls.iter().find(|c| c.callee == n).unwrap().clone();
+        assert_eq!(site("g").loop_path, vec![0, 1]);
+        assert!(
+            site("g").conditional,
+            "the body runs only when the filter holds"
+        );
+        assert_eq!(
+            site("k").loop_path,
+            vec![0],
+            "a later iterable runs once per outer item"
+        );
+        assert_eq!(site("h").loop_path, vec![0, 1]);
+        assert!(!site("h").conditional);
+    }
+
+    /// `continue` and `break` make the rest of their loop's body conditional;
+    /// an exit inside a loop body is a conditional exit (final review C9).
+    #[test]
+    fn continue_break_and_returns_in_loops_cut_lower_bounds() {
+        let r = tier_a(
+            Grammar::Rust,
+            "fn f(v: &[i32]) { for x in v { if *x > 0 { continue; } g(); } }",
+            "f",
+        );
+        assert!(
+            r.calls
+                .iter()
+                .find(|c| c.callee == "g")
+                .unwrap()
+                .conditional
+        );
+        let p = tier_a(
+            Grammar::Python,
+            "def f(xs):\n    for x in xs:\n        if x:\n            continue\n        g()\n",
+            "f",
+        );
+        assert!(
+            p.calls
+                .iter()
+                .find(|c| c.callee == "g")
+                .unwrap()
+                .conditional
+        );
+        let j = tier_a(
+            Grammar::JavaScript,
+            "function f(xs) { for (const x of xs) { if (x) continue; g(); } }",
+            "f",
+        );
+        assert!(
+            j.calls
+                .iter()
+                .find(|c| c.callee == "g")
+                .unwrap()
+                .conditional
+        );
+    }
+
+    /// A call inside a lambda runs only if something invokes the lambda
+    /// (final review C5, C9).
+    #[test]
+    fn calls_inside_anonymous_functions_are_conditional() {
+        let a = tier_a(
+            Grammar::JavaScript,
+            "function f(xs) { return xs.map(x => g(x)); }",
+            "f",
+        );
+        let g = a.calls.iter().find(|c| c.callee == "g").unwrap();
+        assert!(g.conditional);
+        assert!(g.in_anonymous.is_some());
+        let map = a.calls.iter().find(|c| c.callee == "map").unwrap();
+        assert!(map.in_anonymous.is_none());
+    }
+
+    /// Generators and async functions defer their bodies (final review C9).
+    #[test]
+    fn generators_are_deferred() {
+        let a = tier_a(
+            Grammar::Python,
+            "def f(xs):\n    for x in xs:\n        yield x\n",
+            "f",
+        );
+        assert!(a.deferred);
+        let b = tier_a(
+            Grammar::Python,
+            "def f(xs):\n    g = lambda: (yield 1)\n    return xs\n",
+            "f",
+        );
+        assert!(!b.deferred, "a yield inside a nested function is not f's");
+        let j = tier_a(
+            Grammar::JavaScript,
+            "function* f(xs) { for (const x of xs) yield x; }",
+            "f",
+        );
+        assert!(j.deferred);
+    }
+
+    /// Calls inside a Rust macro's arguments are seen (final review C7).
+    #[test]
+    fn rust_macro_arguments_are_reparsed_for_calls() {
+        let a = tier_a(
+            Grammar::Rust,
+            "fn f(v: &Vec<i32>, x: i32) {\n    assert!(v.contains(&x));\n    let s = format!(\"{}\", heavy(v));\n    for y in v { assert_eq!(compute(*y), 1); }\n}\n",
+            "f",
+        );
+        let site = |n: &str| a.calls.iter().find(|c| c.callee == n).cloned();
+        let contains = site("contains").expect("a call inside assert!");
+        assert_eq!(contains.line, 2);
+        assert_eq!(contains.receiver.as_deref(), Some("v"));
+        assert!(site("heavy").is_some());
+        assert_eq!(site("compute").expect("inside a loop").loop_path, vec![0]);
+        let src = "fn f(v: &Vec<i32>, x: i32) {\n    assert!(v.contains(&x));\n}\n";
+        let c = tier_a(Grammar::Rust, src, "f");
+        let at = c
+            .calls
+            .iter()
+            .find(|c| c.callee == "contains")
+            .unwrap()
+            .start_byte;
+        assert_eq!(
+            &src[at..at + 10],
+            "v.contains",
+            "byte offsets point into the file"
         );
     }
 }

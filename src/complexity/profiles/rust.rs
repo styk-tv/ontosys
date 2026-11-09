@@ -165,6 +165,7 @@ impl Profile for RustProfile {
         match n.kind() {
             "return_expression" => Exit::Return,
             "break_expression" => Exit::Break(label_of(n, src)),
+            "continue_expression" => Exit::Continue(label_of(n, src)),
             "try_expression" => Exit::Maybe,
             _ => Exit::None,
         }
@@ -176,6 +177,27 @@ impl Profile for RustProfile {
 
     fn label(&self, _n: Node, _src: &[u8]) -> Option<String> {
         None
+    }
+
+    /// A macro's token tree, wrapped so its arguments parse as expressions:
+    /// `f!(a, b)` as a call `__f(a, b)`, `v![x; n]` and `m!{…}` as values.
+    fn reparse_macro(&self, n: Node, src: &[u8]) -> Option<(usize, String, usize)> {
+        if n.kind() != "macro_invocation" {
+            return None;
+        }
+        let mut c = n.walk();
+        let tt = n.children(&mut c).find(|x| x.kind() == "token_tree")?;
+        let tokens = text(tt, src);
+        let prefix = match tokens.chars().next()? {
+            '(' => "fn __m() { __f",
+            '[' | '{' => "fn __m() { let _ = ",
+            _ => return None,
+        };
+        Some((
+            tt.start_byte(),
+            format!("{prefix}{tokens}; }}"),
+            prefix.len(),
+        ))
     }
 
     /// Attribute items directly above the function (nothing between them,

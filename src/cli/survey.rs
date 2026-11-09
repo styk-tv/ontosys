@@ -54,6 +54,11 @@ pub struct Snapshot {
     pub complexity_sha256: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inputs_sha256: Option<String>,
+    /// The repository's cost overlay and claims, as the build read them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlay_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claims_sha256: Option<String>,
     pub functions_by_language: BTreeMap<String, u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cyclomatic: Option<Spread>,
@@ -153,6 +158,9 @@ pub fn snapshot(repo: &Path, source: &str, installed_version: &str) -> Snapshot 
     s.inputs_sha256 = text("inputs_sha256");
     s.unparsed_by_extension = counts(meta.get("unparsed_by_extension"));
     let cx = meta.get("complexity");
+    let cx_text = |k: &str| cx.and_then(|c| c.get(k)).and_then(|v| v.as_str()).map(str::to_string);
+    s.overlay_sha256 = cx_text("overlay_sha256");
+    s.claims_sha256 = cx_text("claims_sha256");
     if let Some(tier_a) = cx.and_then(|c| c.get("tier_a")).and_then(|t| t.as_object()) {
         for (lang, st) in tier_a {
             if let Some(n) = st.get("analysed").and_then(|v| v.as_u64()) {
@@ -283,6 +291,13 @@ pub fn report(ledger: &Path) -> anyhow::Result<String> {
                 total(&latest.functions_by_language)
             )
         )?;
+        // The owner's own inputs to the estimates, not the tool's.
+        if prev.overlay_sha256 != latest.overlay_sha256 {
+            writeln!(r, "  overlay changed (.ontosys/cost-catalog.ttl)")?;
+        }
+        if prev.claims_sha256 != latest.claims_sha256 {
+            writeln!(r, "  claims changed (.ontosys/claims/complexity.ttl)")?;
+        }
         if let (Some(a), Some(b)) = (&prev.cyclomatic, &latest.cyclomatic) {
             writeln!(
                 r,
@@ -609,6 +624,33 @@ mod tests {
         let r = report(&ledger).unwrap();
         assert!(r.contains("functions 50 -> 55 (+5)"), "{r}");
         assert!(!r.contains("12 -> 55"), "never across tool commits: {r}");
+        fs::remove_dir_all(&root).ok();
+    }
+
+    /// Final review I6: an overlay or claims edit is an input change, named
+    /// as such, not mistaken for the tool's.
+    #[test]
+    fn report_names_overlay_and_claims_changes() {
+        let root = tmp("report-inputs");
+        let ledger = root.join("ledger.jsonl");
+        let snap = |overlay: &str, claims: &str, at: &str| Snapshot {
+            at: at.into(),
+            repo: "r".into(),
+            ontosys_commit: Some("c1".into()),
+            overlay_sha256: Some(overlay.into()),
+            claims_sha256: Some(claims.into()),
+            ..Default::default()
+        };
+        append(&ledger, &[snap("o1", "k1", "1"), snap("o2", "k1", "2")]).unwrap();
+        let r = report(&ledger).unwrap();
+        assert!(r.contains("overlay changed"), "{r}");
+        assert!(!r.contains("claims changed"), "{r}");
+        let meta = serde_json::json!({"complexity": {"overlay_sha256": "aa", "claims_sha256": "bb"}});
+        let dir = root.join("repo/.ontosys/data");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("build-meta.json"), meta.to_string()).unwrap();
+        let s = snapshot(&root.join("repo"), "here", "0.9.0");
+        assert_eq!((s.overlay_sha256.as_deref(), s.claims_sha256.as_deref()), (Some("aa"), Some("bb")));
         fs::remove_dir_all(&root).ok();
     }
 }

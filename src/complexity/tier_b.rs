@@ -189,6 +189,7 @@ pub(crate) mod tests {
             loop_path: (0..depth).collect(),
             conditional: false,
             in_condition_of: None,
+            in_anonymous: None,
         }
     }
 
@@ -214,6 +215,7 @@ pub(crate) mod tests {
                     evidence: Default::default(),
                     definition_sha256: None,
                     targets,
+                    stub: false,
                 },
             );
         }
@@ -336,6 +338,7 @@ pub(crate) mod tests {
                     evidence: Default::default(),
                     definition_sha256: None,
                     targets,
+                    stub: false,
                 },
             );
         }
