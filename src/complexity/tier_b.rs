@@ -210,6 +210,7 @@ pub(crate) mod tests {
                 Grammar::C,
                 DefRec {
                     tier_a,
+                    loops: vec![],
                     definition_sha256: None,
                     targets,
                 },
@@ -330,6 +331,7 @@ pub(crate) mod tests {
                 Grammar::C,
                 DefRec {
                     tier_a,
+                    loops: vec![],
                     definition_sha256: None,
                     targets,
                 },

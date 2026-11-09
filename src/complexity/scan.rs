@@ -21,6 +21,8 @@ pub struct FunctionFacts {
     pub grammar: Grammar,
     pub tier_a: TierA,
     pub definition_sha256: Option<String>,
+    /// Bound class of every loop in `tier_a.loops`, same order.
+    pub loops: Vec<super::loops::LoopFact>,
 }
 
 /// Facts for every named function with a body, in document order, and the
@@ -48,8 +50,10 @@ pub fn scan_file(rel_path: &str, bytes: &[u8], grammar: Grammar) -> (Vec<Functio
     while let Some((n, inside_fn)) = stack.pop() {
         if let Some((name_node, def, body)) = named_function(n, grammar, inside_fn) {
             let name = text(name_node, bytes).to_string();
+            let tier_a = analyze(body, bytes, &name, profile);
             out.push(FunctionFacts {
-                tier_a: analyze(body, bytes, &name, profile),
+                loops: super::loops::classify_all(body, bytes, grammar, &tier_a.loops),
+                tier_a,
                 definition_sha256: Some(definition_sha256(def, bytes, profile)),
                 name_line: name_node.start_position().row + 1,
                 file: rel_path.to_string(),

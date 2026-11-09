@@ -307,6 +307,14 @@ pub async fn run(
     };
     complexity::model::model_add_scanned(&mut model, attached);
     let (tier_b, call_cycles) = complexity::tier_b::tier_b(&model);
+    let mut loops_by_class: std::collections::BTreeMap<complexity::loops::BoundClass, usize> = std::collections::BTreeMap::new();
+    for f in &model.fns {
+        for d in &f.defs {
+            for l in &d.loops {
+                *loops_by_class.entry(l.class).or_default() += 1;
+            }
+        }
+    }
     complexity::rdf::tier_b_triples(project_id, &model, &tier_b, &call_cycles, &mut complexity_triples);
     if config.redact_emails {
         complexity_triples = redact_triples(complexity_triples);
@@ -425,6 +433,7 @@ pub async fn run(
         c_parse_error_nodes: c_errors,
         complexity: ComplexityMeta {
             hash_skipped_invalid_utf8: c_files.iter().filter(|f| f.hash_skipped).count(),
+            loops_by_class,
             tier_a: {
                 let mut m: std::collections::BTreeMap<&'static str, complexity::join::AttachStats> =
                     tier_a_stats.into_iter().map(|(g, st)| (g.name(), st)).collect();
@@ -662,6 +671,8 @@ struct BuildMetadata {
 struct ComplexityMeta {
     /// C files parsed from a lossy UTF-8 decode, whose functions carry no definition hash.
     hash_skipped_invalid_utf8: usize,
+    /// Loops of every analysed function, by bound class.
+    loops_by_class: std::collections::BTreeMap<complexity::loops::BoundClass, usize>,
     /// Per grammar: functions analysed, attached to a declaration, and why not.
     tier_a: std::collections::BTreeMap<&'static str, complexity::join::AttachStats>,
 }

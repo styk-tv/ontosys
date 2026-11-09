@@ -5,8 +5,10 @@
 //! walks any tree-sitter function body; a per-grammar [`engine::Profile`]
 //! says which node kinds are decisions, loops, branches and calls.
 
+pub mod cost;
 pub mod engine;
 pub mod join;
+pub mod loops;
 pub mod model;
 pub mod output;
 pub mod profiles;

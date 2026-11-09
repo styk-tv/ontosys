@@ -79,6 +79,8 @@ pub struct CFunction {
     /// sha256 of the definition's bytes as they are in the file; None when
     /// the parsed text is not the file's exact bytes.
     pub definition_sha256: Option<String>,
+    /// Bound class of every loop in `tier_a.loops`, same order.
+    pub loops: Vec<crate::complexity::loops::LoopFact>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -433,6 +435,7 @@ fn analyze_body(body: Node, b: &[u8], f: &mut CFunction) {
     f.tier_a = crate::complexity::engine::analyze(body, b, &f.name, &crate::complexity::profiles::c::C);
     f.complexity = f.tier_a.cyclomatic;
     f.statements = f.tier_a.statements;
+    f.loops = crate::complexity::loops::classify_all(body, b, crate::complexity::Grammar::C, &f.tier_a.loops);
 }
 
 fn call(n: Node, b: &[u8], f: &mut CFunction) {

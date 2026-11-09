@@ -28,6 +28,8 @@ pub enum Target {
 #[derive(Debug, Clone)]
 pub struct DefRec {
     pub tier_a: TierA,
+    /// Parallel to `tier_a.loops`.
+    pub loops: Vec<super::loops::LoopFact>,
     pub definition_sha256: Option<String>,
     /// Parallel to `tier_a.calls`.
     pub targets: Vec<Target>,
@@ -106,6 +108,7 @@ pub fn model_from_c(
         for func in &f.functions {
             let def = DefRec {
                 tier_a: func.tier_a.clone(),
+                loops: func.loops.clone(),
                 definition_sha256: func.definition_sha256.clone(),
                 targets: Vec::new(),
             };
@@ -169,6 +172,7 @@ pub fn model_add_scanned(m: &mut Model, attached: Vec<(Iri, FunctionFacts)>) {
     for (iri, f) in attached {
         let def = DefRec {
             tier_a: f.tier_a,
+            loops: f.loops,
             definition_sha256: f.definition_sha256,
             targets: Vec::new(),
         };
