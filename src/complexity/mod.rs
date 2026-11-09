@@ -6,6 +6,7 @@
 //! says which node kinds are decisions, loops, branches and calls.
 
 pub mod catalog;
+pub mod claims;
 pub mod cost;
 pub mod engine;
 pub mod estimate;

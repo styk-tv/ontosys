@@ -297,3 +297,27 @@ code:BlockReasonShape a sh:NodeShape ; sh:targetClass code:BlockReason ; sh:prop
 code:AssumptionKindShape a sh:NodeShape ; sh:targetClass code:AssumptionKind ; sh:property [ sh:path rdfs:label ; sh:minCount 1 ] .
 code:BoundClassShape a sh:NodeShape ; sh:targetClass code:BoundClass ; sh:property [ sh:path rdfs:label ; sh:minCount 1 ] .
 code:FindingKindShape a sh:NodeShape ; sh:targetClass code:FindingKind ; sh:property [ sh:path rdfs:label ; sh:minCount 1 ] .
+
+# ---- Tier D: claims (a repository's .ontosys/claims/complexity.ttl, copied into complexity.nt)
+
+code:Claim a owl:Class ; rdfs:label "claim" ; rdfs:comment "A person's or an agent's reading of how a function's cost grows, tied to the definition it read." .
+code:ClaimStatus a owl:Class ; rdfs:label "claim status" ; rdfs:comment "Whether a claim still describes the definition it was made against (closed set)." .
+code:Current a owl:NamedIndividual, code:ClaimStatus ; rdfs:label "current" ; rdfs:comment "The function's definitionSha256 still equals the claim's madeAgainst." .
+code:Stale a owl:NamedIndividual, code:ClaimStatus ; rdfs:label "stale" ; rdfs:comment "The definition changed since the claim, or the function is gone. Kept and shown, never applied." .
+code:about a owl:ObjectProperty ; rdfs:label "about" ; rdfs:comment "The function a claim describes." .
+code:madeAgainst a owl:DatatypeProperty ; rdfs:label "made against" ; rdfs:comment "The definitionSha256 of the function when the claim was made." ; rdfs:range xsd:string .
+code:claimStatus a owl:ObjectProperty ; rdfs:label "claim status" ; rdfs:comment "Current or stale, decided on every build." .
+code:sizeMeaning a owl:DatatypeProperty ; rdfs:label "size meaning" ; rdfs:comment "What the claim's size variables are, in words." ; rdfs:range xsd:string .
+code:madeBy a owl:DatatypeProperty ; rdfs:label "made by" ; rdfs:comment "Who read the code: a person or a session." ; rdfs:range xsd:string .
+code:madeAt a owl:DatatypeProperty ; rdfs:label "made at" ; rdfs:comment "When the claim was made." ; rdfs:range xsd:string .
+
+code:ClaimShape a sh:NodeShape ;
+    sh:targetClass code:Claim ;
+    sh:property [ sh:path code:about ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ,
+                [ sh:path code:madeAgainst ; sh:minCount 1 ; sh:maxCount 1 ; sh:pattern "^[0-9a-f]{64}$" ] ,
+                [ sh:path code:claimStatus ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( code:Current code:Stale ) ] ,
+                [ sh:path code:sizeMeaning ; sh:datatype xsd:string ] ,
+                [ sh:path code:madeBy ; sh:datatype xsd:string ] ,
+                [ sh:path code:madeAt ; sh:datatype xsd:string ] .
+
+code:ClaimStatusShape a sh:NodeShape ; sh:targetClass code:ClaimStatus ; sh:property [ sh:path rdfs:label ; sh:minCount 1 ] .

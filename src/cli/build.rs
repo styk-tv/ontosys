@@ -331,6 +331,13 @@ pub async fn run(
         .map(|f| f.defs.iter().flat_map(|d| complexity::findings::findings(d, &d.evidence, &catalog, f.grammar, &f.name)).collect())
         .collect();
     complexity::rdf::tier_c_triples(&model, &estimates, &findings, &catalog.version, &mut complexity_triples);
+    // Tier D: claims this repository keeps about its functions.
+    let claims_path = ontosys_path.join("claims").join("complexity.ttl");
+    let claims = match fs::read_to_string(&claims_path) {
+        Ok(ttl) => complexity::claims::parse_claims(&ttl).map_err(|e| anyhow::anyhow!(".ontosys/claims/complexity.ttl: {e}"))?,
+        Err(_) => Vec::new(),
+    };
+    let claim_stats = complexity::claims::claim_triples(&claims, &model, &mut complexity_triples);
     let mut by_assumption: std::collections::BTreeMap<complexity::loops::Assumption, usize> = std::collections::BTreeMap::new();
     for e in &estimates {
         for k in e.assumptions.keys() {
@@ -475,6 +482,7 @@ pub async fn run(
             by_basis,
             by_reason,
             by_assumption,
+            claims: claim_stats,
             findings_by_kind,
             unlock,
             loops_by_class,
@@ -721,6 +729,8 @@ struct ComplexityMeta {
     by_basis: std::collections::BTreeMap<complexity::estimate::Basis, usize>,
     /// Functions by each reason their upper bound is missing.
     by_reason: std::collections::BTreeMap<complexity::estimate::Reason, usize>,
+    /// Claims read from .ontosys/claims/complexity.ttl, by status.
+    claims: complexity::claims::ClaimStats,
     /// Estimates by each assumption kind they rest on.
     by_assumption: std::collections::BTreeMap<complexity::loops::Assumption, usize>,
     findings_by_kind: std::collections::BTreeMap<complexity::findings::FindingKind, usize>,
