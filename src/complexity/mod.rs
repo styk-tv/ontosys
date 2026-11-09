@@ -40,18 +40,26 @@ impl Grammar {
 
     /// The analysis profile, when this grammar has one in this build.
     pub fn profile(self) -> Option<&'static dyn Profile> {
-        match self {
-            Grammar::C => Some(&profiles::c::C),
-            _ => None,
-        }
+        Some(match self {
+            Grammar::C => &profiles::c::C,
+            Grammar::Rust => &profiles::rust::RUST,
+            Grammar::Python => &profiles::python::PYTHON,
+            Grammar::JavaScript => &profiles::js::JAVASCRIPT,
+            Grammar::TypeScript => &profiles::js::TYPESCRIPT,
+            Grammar::Tsx => &profiles::js::TSX,
+        })
     }
 
     /// The tree-sitter language, when this build links its grammar.
     pub fn language(self) -> Option<tree_sitter::Language> {
-        match self {
-            Grammar::C => Some(tree_sitter_c::LANGUAGE.into()),
-            _ => None,
-        }
+        Some(match self {
+            Grammar::C => tree_sitter_c::LANGUAGE.into(),
+            Grammar::Rust => tree_sitter_rust::LANGUAGE.into(),
+            Grammar::Python => tree_sitter_python::LANGUAGE.into(),
+            Grammar::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
+            Grammar::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            Grammar::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
+        })
     }
 
     /// Short lowercase name, as used in build-meta keys.

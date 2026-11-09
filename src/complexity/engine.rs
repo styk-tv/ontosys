@@ -54,6 +54,8 @@ pub enum Exit {
     Break(Option<String>),
     Goto(String),
     Throw,
+    /// May leave the function on any path (Rust `?`).
+    Maybe,
 }
 
 /// Grammar knowledge the engine asks for. Implemented once per grammar.
@@ -236,8 +238,8 @@ pub fn analyze(body: Node, src: &[u8], name: &str, profile: &dyn Profile) -> Tie
                     }
                 }
                 let leaves_function = matches!(exit, Exit::Return | Exit::Throw | Exit::Goto(_));
-                if leaves_function && f.in_branch && f.anon == 0 && first_conditional_exit.is_none()
-                {
+                let conditional_exit = exit == Exit::Maybe || (leaves_function && f.in_branch);
+                if conditional_exit && f.anon == 0 && first_conditional_exit.is_none() {
                     first_conditional_exit = Some(n.start_byte());
                 }
             }
