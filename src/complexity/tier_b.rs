@@ -211,6 +211,7 @@ pub(crate) mod tests {
                 DefRec {
                     tier_a,
                     loops: vec![],
+                    evidence: Default::default(),
                     definition_sha256: None,
                     targets,
                 },
@@ -332,6 +333,7 @@ pub(crate) mod tests {
                 DefRec {
                     tier_a,
                     loops: vec![],
+                    evidence: Default::default(),
                     definition_sha256: None,
                     targets,
                 },

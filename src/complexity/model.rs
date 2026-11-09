@@ -30,6 +30,8 @@ pub struct DefRec {
     pub tier_a: TierA,
     /// Parallel to `tier_a.loops`.
     pub loops: Vec<super::loops::LoopFact>,
+    /// Syntax the findings need.
+    pub evidence: super::findings::Evidence,
     pub definition_sha256: Option<String>,
     /// Parallel to `tier_a.calls`.
     pub targets: Vec<Target>,
@@ -109,6 +111,7 @@ pub fn model_from_c(
             let def = DefRec {
                 tier_a: func.tier_a.clone(),
                 loops: func.loops.clone(),
+                evidence: func.evidence.clone(),
                 definition_sha256: func.definition_sha256.clone(),
                 targets: Vec::new(),
             };
@@ -173,6 +176,7 @@ pub fn model_add_scanned(m: &mut Model, attached: Vec<(Iri, FunctionFacts)>) {
         let def = DefRec {
             tier_a: f.tier_a,
             loops: f.loops,
+            evidence: f.evidence,
             definition_sha256: f.definition_sha256,
             targets: Vec::new(),
         };

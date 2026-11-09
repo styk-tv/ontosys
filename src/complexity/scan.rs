@@ -23,6 +23,8 @@ pub struct FunctionFacts {
     pub definition_sha256: Option<String>,
     /// Bound class of every loop in `tier_a.loops`, same order.
     pub loops: Vec<super::loops::LoopFact>,
+    /// Syntax the findings need.
+    pub evidence: super::findings::Evidence,
 }
 
 /// Facts for every named function with a body, in document order, and the
@@ -54,6 +56,7 @@ pub fn scan_file(rel_path: &str, bytes: &[u8], grammar: Grammar) -> (Vec<Functio
             tier_a.memoized = super::engine::detect_memo(def, body, bytes, &name, &tier_a, profile);
             out.push(FunctionFacts {
                 loops: super::loops::classify_all(body, bytes, grammar, &tier_a.loops),
+                evidence: super::findings::evidence(body, bytes, grammar, &tier_a.loops),
                 tier_a,
                 definition_sha256: Some(definition_sha256(def, bytes, profile)),
                 name_line: name_node.start_position().row + 1,
