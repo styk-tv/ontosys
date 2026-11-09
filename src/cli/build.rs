@@ -325,6 +325,26 @@ pub async fn run(
     complexity::rdf::tier_b_triples(project_id, &model, &tier_b, &call_cycles, &mut complexity_triples);
     let macro_bodies = complexity::estimate::macro_bodies(project_id, &c_files);
     let estimates = complexity::estimate::estimate_all(&model, &call_cycles, &catalog, &macro_bodies);
+    let findings: Vec<Vec<complexity::findings::Finding>> = model
+        .fns
+        .iter()
+        .map(|f| f.defs.iter().flat_map(|d| complexity::findings::findings(d, &d.evidence, &catalog, f.grammar, &f.name)).collect())
+        .collect();
+    complexity::rdf::tier_c_triples(&model, &estimates, &findings, &catalog.version, &mut complexity_triples);
+    let mut by_assumption: std::collections::BTreeMap<complexity::loops::Assumption, usize> = std::collections::BTreeMap::new();
+    for e in &estimates {
+        for k in e.assumptions.keys() {
+            *by_assumption.entry(*k).or_default() += 1;
+        }
+    }
+    let mut findings_by_kind: std::collections::BTreeMap<complexity::findings::FindingKind, usize> = std::collections::BTreeMap::new();
+    for fd in findings.iter().flatten() {
+        *findings_by_kind.entry(fd.kind).or_default() += 1;
+    }
+    let unlock: Vec<UnlockEntry> = complexity::estimate::unlock(&model, &estimates, 50)
+        .into_iter()
+        .map(|(name, functions)| UnlockEntry { name, functions })
+        .collect();
     let mut by_basis: std::collections::BTreeMap<complexity::estimate::Basis, usize> = std::collections::BTreeMap::new();
     let mut by_reason: std::collections::BTreeMap<complexity::estimate::Reason, usize> = std::collections::BTreeMap::new();
     for e in &estimates {
@@ -454,6 +474,9 @@ pub async fn run(
             catalog_version: catalog.version.clone(),
             by_basis,
             by_reason,
+            by_assumption,
+            findings_by_kind,
+            unlock,
             loops_by_class,
             tier_a: {
                 let mut m: std::collections::BTreeMap<&'static str, complexity::join::AttachStats> =
@@ -698,10 +721,22 @@ struct ComplexityMeta {
     by_basis: std::collections::BTreeMap<complexity::estimate::Basis, usize>,
     /// Functions by each reason their upper bound is missing.
     by_reason: std::collections::BTreeMap<complexity::estimate::Reason, usize>,
+    /// Estimates by each assumption kind they rest on.
+    by_assumption: std::collections::BTreeMap<complexity::loops::Assumption, usize>,
+    findings_by_kind: std::collections::BTreeMap<complexity::findings::FindingKind, usize>,
+    /// Uncatalogued names by how many functions each alone keeps without an
+    /// upper bound (following blocked callees to their roots); top 50.
+    unlock: Vec<UnlockEntry>,
     /// Loops of every analysed function, by bound class.
     loops_by_class: std::collections::BTreeMap<complexity::loops::BoundClass, usize>,
     /// Per grammar: functions analysed, attached to a declaration, and why not.
     tier_a: std::collections::BTreeMap<&'static str, complexity::join::AttachStats>,
+}
+
+#[derive(serde::Serialize)]
+struct UnlockEntry {
+    name: String,
+    functions: usize,
 }
 
 /// The ontosys commit this binary was built from, and whether its tree was dirty.

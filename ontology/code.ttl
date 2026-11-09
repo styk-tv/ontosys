@@ -138,3 +138,162 @@ code:iterates a owl:DatatypeProperty ; rdfs:label "iterates" ; rdfs:comment "The
 code:source a owl:DatatypeProperty ; rdfs:label "source" ; rdfs:comment "Where the cost comes from (the language or library documentation, or who read the code)." ; rdfs:range xsd:string .
 code:sizeName a owl:DatatypeProperty ; rdfs:label "size name" ; rdfs:comment "A size expression as written in code." ; rdfs:range xsd:string .
 code:cappedBy a owl:DatatypeProperty ; rdfs:label "capped by" ; rdfs:comment "The constant that caps the named size." ; rdfs:range xsd:string .
+
+# ---- Tier C: growth estimates (complexity.nt) ----------------------------------
+
+code:GrowthEstimate a owl:Class ; rdfs:label "growth estimate" ; rdfs:comment "How a function's cost grows with its input, with its method, basis, assumptions and reasons. An upper class is stated only when nothing in the body is unknown; a lower class counts only work on every path." .
+code:Loop a owl:Class ; rdfs:label "loop" ; rdfs:comment "One loop of a function, with its bound class: evidence for the estimate." .
+code:Blocker a owl:Class ; rdfs:label "blocker" ; rdfs:comment "One construct that keeps a function's upper bound unknown, with its reason." .
+code:Finding a owl:Class ; rdfs:label "finding" ; rdfs:comment "A shape worth attention (a linear call in a loop condition, a sort in a loop, ...), with its evidence." .
+code:BlockReason a owl:Class ; rdfs:label "block reason" ; rdfs:comment "Why an upper bound is missing (closed set)." .
+code:AssumptionKind a owl:Class ; rdfs:label "assumption kind" ; rdfs:comment "What a bound rests on beyond the text (closed set)." .
+code:BoundClass a owl:Class ; rdfs:label "bound class" ; rdfs:comment "How a loop is bounded (closed set)." .
+code:FindingKind a owl:Class ; rdfs:label "finding kind" ; rdfs:comment "Which shape a finding is (closed set)." .
+
+code:UncostedCall a owl:NamedIndividual, code:BlockReason ; rdfs:label "uncosted call" ; rdfs:comment "An external callee with no catalog entry and no macro body to derive a cost from. Removed by a catalog or overlay entry." .
+code:IndirectCall a owl:NamedIndividual, code:BlockReason ; rdfs:label "indirect call" ; rdfs:comment "A call through a pointer, callback or computed callee." .
+code:AmbiguousCall a owl:NamedIndividual, code:BlockReason ; rdfs:label "ambiguous call" ; rdfs:comment "The name matches several repository definitions and the text does not say which runs." .
+code:CyclicCall a owl:NamedIndividual, code:BlockReason ; rdfs:label "cyclic call" ; rdfs:comment "A callee in the same call cycle, or recursion outside the table (including memoised recursion)." .
+code:BlockedCallee a owl:NamedIndividual, code:BlockReason ; rdfs:label "blocked callee" ; rdfs:comment "A repository callee has no upper bound; its own blockers say why." .
+code:DataDependentLoop a owl:NamedIndividual, code:BlockReason ; rdfs:label "data-dependent loop" ; rdfs:comment "A loop whose bound the text does not fix." .
+code:UnboundedLoop a owl:NamedIndividual, code:BlockReason ; rdfs:label "unbounded loop" ; rdfs:comment "A loop with no condition: it runs until an event, so its cost depends on events, not input size." .
+code:UnstructuredFlow a owl:NamedIndividual, code:BlockReason ; rdfs:label "unstructured flow" ; rdfs:comment "A backward goto or a setjmp re-entry point." .
+code:Unparsed a owl:NamedIndividual, code:BlockReason ; rdfs:label "unparsed" ; rdfs:comment "The body has parse errors; no bounds at all." .
+
+code:ConstantNameAssumption a owl:NamedIndividual, code:AssumptionKind ; rdfs:label "ALL_CAPS names are constants" .
+code:LoopShapeAssumption a owl:NamedIndividual, code:AssumptionKind ; rdfs:label "a classified loop runs at most its bound" .
+code:CatalogCaseAssumption a owl:NamedIndividual, code:AssumptionKind ; rdfs:label "a catalog average or amortized cost is cheaper than the worst case used" .
+code:OverlayCapAssumption a owl:NamedIndividual, code:AssumptionKind ; rdfs:label "a repository overlay caps a size" .
+code:BuiltinReceiverAssumption a owl:NamedIndividual, code:AssumptionKind ; rdfs:label "a method's receiver is a built-in type or a repository class" .
+code:MergedDefinitionsAssumption a owl:NamedIndividual, code:AssumptionKind ; rdfs:label "several definitions share one IRI; bounds combine over all" .
+
+code:ConstantBound a owl:NamedIndividual, code:BoundClass ; rdfs:label "constant bound" .
+code:SizeBound a owl:NamedIndividual, code:BoundClass ; rdfs:label "size bound" .
+code:SentinelBound a owl:NamedIndividual, code:BoundClass ; rdfs:label "sentinel bound" .
+code:HalvingBound a owl:NamedIndividual, code:BoundClass ; rdfs:label "halving bound" .
+code:Unbounded a owl:NamedIndividual, code:BoundClass ; rdfs:label "unbounded" .
+code:UnknownBound a owl:NamedIndividual, code:BoundClass ; rdfs:label "unknown bound" .
+
+code:LinearCallInLoopCondition a owl:NamedIndividual, code:FindingKind ; rdfs:label "linear call in a loop condition" .
+code:ListMembershipInLoop a owl:NamedIndividual, code:FindingKind ; rdfs:label "list membership inside a loop" .
+code:ConcatInLoop a owl:NamedIndividual, code:FindingKind ; rdfs:label "string concatenation inside a loop" .
+code:SortInLoop a owl:NamedIndividual, code:FindingKind ; rdfs:label "sort inside a loop" .
+code:SameCollectionNestedLoops a owl:NamedIndividual, code:FindingKind ; rdfs:label "nested loops over one collection" .
+code:UnmemoizedMultiRecursion a owl:NamedIndividual, code:FindingKind ; rdfs:label "recursion that recomputes" .
+
+code:estimates a owl:ObjectProperty ; rdfs:label "estimates" ; rdfs:comment "The function an estimate is about." .
+code:upperClass a owl:ObjectProperty ; rdfs:label "upper class" ; rdfs:comment "Worst-case growth, rounded up into the closed set. Absent when anything in the body is unknown." .
+code:lowerClass a owl:ObjectProperty ; rdfs:label "lower class" ; rdfs:comment "Growth of the work that runs on every path. Equal to the upper class means Theta." .
+code:degree a owl:DatatypeProperty ; rdfs:label "degree" ; rdfs:comment "Polynomial degree of the upper bound, before rounding." ; rdfs:range xsd:integer .
+code:base a owl:DatatypeProperty ; rdfs:label "base" ; rdfs:comment "Base of an exponential upper class." ; rdfs:range xsd:integer .
+code:exactForm a owl:DatatypeProperty ; rdfs:label "exact form" ; rdfs:comment "The composed bound when it was rounded up to a class (n^2 log n)." ; rdfs:range xsd:string .
+code:sizeExpression a owl:DatatypeProperty ; rdfs:label "size expression" ; rdfs:comment "A bounding expression as written (separate inputs keep separate variables)." ; rdfs:range xsd:string .
+code:basis a owl:DatatypeProperty ; rdfs:label "basis" ; rdfs:comment "exact-shape (both bounds stated), partial (lower bound only) or unknown (parse errors)." ; rdfs:range xsd:string .
+code:blockedBy a owl:ObjectProperty ; rdfs:label "blocked by" ; rdfs:comment "A reason the upper bound is missing." .
+code:assumes a owl:ObjectProperty ; rdfs:label "assumes" ; rdfs:comment "An assumption kind the bound rests on, including those of callees." .
+code:assumptionText a owl:DatatypeProperty ; rdfs:label "assumption text" ; rdfs:range xsd:string .
+code:catalogVersion a owl:DatatypeProperty ; rdfs:label "catalog version" ; rdfs:range xsd:string .
+code:inFunction a owl:ObjectProperty ; rdfs:label "in function" ; rdfs:comment "The function a loop or finding belongs to." .
+code:startLine a owl:DatatypeProperty ; rdfs:label "start line" ; rdfs:comment "1-based line of a loop, blocker or finding." ; rdfs:range xsd:integer .
+code:loopDepth a owl:DatatypeProperty ; rdfs:label "loop depth" ; rdfs:comment "Loops around this one, plus one." ; rdfs:range xsd:integer .
+code:boundClass a owl:ObjectProperty ; rdfs:label "bound class" .
+code:boundExpression a owl:DatatypeProperty ; rdfs:label "bound expression" ; rdfs:comment "The bound as written, at most 200 characters." ; rdfs:range xsd:string .
+code:reason a owl:ObjectProperty ; rdfs:label "reason" .
+code:blockerText a owl:DatatypeProperty ; rdfs:label "blocker text" ; rdfs:range xsd:string .
+code:blockedCallee a owl:ObjectProperty ; rdfs:label "blocked callee" ; rdfs:comment "The repository callee whose own missing bound blocks this one." .
+code:findingKind a owl:ObjectProperty ; rdfs:label "finding kind" .
+code:evidenceText a owl:DatatypeProperty ; rdfs:label "evidence text" ; rdfs:range xsd:string .
+
+# ---- Shapes (SHACL): each targets a class complexity.nt types itself ---------
+
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+code:AnalysedFunctionShape a sh:NodeShape ;
+    sh:targetClass code:AnalysedFunction ;
+    sh:property [ sh:path code:fanIn ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ] ,
+                [ sh:path code:fanOut ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ] ,
+                [ sh:path code:externalCallCount ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ] ,
+                [ sh:path code:inCallCycle ; sh:maxCount 1 ; sh:class code:CallCycle ] ,
+                [ sh:path code:transitiveLoopDepth ; sh:maxCount 1 ; sh:datatype xsd:integer ] ,
+                [ sh:path code:definitionCount ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 2 ] .
+
+code:CallCycleShape a sh:NodeShape ;
+    sh:targetClass code:CallCycle ;
+    sh:property [ sh:path code:memberCount ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 2 ] .
+
+code:GrowthEstimateShape a sh:NodeShape ;
+    sh:targetClass code:GrowthEstimate ;
+    sh:property [ sh:path code:estimates ; sh:minCount 1 ; sh:maxCount 1 ; sh:class code:AnalysedFunction ] ,
+                [ sh:path code:basis ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "exact-shape" "partial" "unknown" ) ] ,
+                [ sh:path code:lowerClass ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( code:O1 code:OLogN code:ON code:ONLogN code:ON2 code:ON3 code:ONK code:OExp ) ] ,
+                [ sh:path code:upperClass ; sh:maxCount 1 ; sh:in ( code:O1 code:OLogN code:ON code:ONLogN code:ON2 code:ON3 code:ONK code:OExp ) ] ,
+                [ sh:path code:blockedBy ; sh:in ( code:UncostedCall code:IndirectCall code:AmbiguousCall code:CyclicCall code:BlockedCallee code:DataDependentLoop code:UnboundedLoop code:UnstructuredFlow code:Unparsed ) ] ,
+                [ sh:path code:assumes ; sh:in ( code:ConstantNameAssumption code:LoopShapeAssumption code:CatalogCaseAssumption code:OverlayCapAssumption code:BuiltinReceiverAssumption code:MergedDefinitionsAssumption ) ] ,
+                [ sh:path code:degree ; sh:maxCount 1 ; sh:datatype xsd:integer ] ,
+                [ sh:path code:base ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 2 ] ,
+                [ sh:path code:exactForm ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+                [ sh:path code:sizeExpression ; sh:datatype xsd:string ; sh:maxLength 200 ] ,
+                [ sh:path code:assumptionText ; sh:datatype xsd:string ; sh:maxLength 200 ] ,
+                [ sh:path code:catalogVersion ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:or ( [ sh:property [ sh:path code:basis ; sh:in ( "partial" "unknown" ) ] ]
+            [ sh:property [ sh:path code:upperClass ; sh:minCount 1 ] ] ) .
+
+code:LoopShape a sh:NodeShape ;
+    sh:targetClass code:Loop ;
+    sh:property [ sh:path code:inFunction ; sh:minCount 1 ; sh:maxCount 1 ; sh:class code:AnalysedFunction ] ,
+                [ sh:path code:startLine ; sh:minCount 1 ; sh:datatype xsd:integer ] ,
+                [ sh:path code:boundClass ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( code:ConstantBound code:SizeBound code:SentinelBound code:HalvingBound code:Unbounded code:UnknownBound ) ] ,
+                [ sh:path code:loopDepth ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ] ,
+                [ sh:path code:boundExpression ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:maxLength 200 ] .
+
+code:BlockerShape a sh:NodeShape ;
+    sh:targetClass code:Blocker ;
+    sh:property [ sh:path code:reason ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( code:UncostedCall code:IndirectCall code:AmbiguousCall code:CyclicCall code:BlockedCallee code:DataDependentLoop code:UnboundedLoop code:UnstructuredFlow code:Unparsed ) ] ,
+                [ sh:path code:blockedCallee ; sh:maxCount 1 ; sh:class code:AnalysedFunction ] ,
+                [ sh:path code:blockerText ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:maxLength 200 ] .
+
+code:FindingShape a sh:NodeShape ;
+    sh:targetClass code:Finding ;
+    sh:property [ sh:path code:findingKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( code:LinearCallInLoopCondition code:ListMembershipInLoop code:ConcatInLoop code:SortInLoop code:SameCollectionNestedLoops code:UnmemoizedMultiRecursion ) ] ,
+                [ sh:path code:inFunction ; sh:minCount 1 ; sh:class code:AnalysedFunction ] ,
+                [ sh:path code:evidenceText ; sh:minCount 1 ; sh:datatype xsd:string ; sh:maxLength 200 ] .
+
+# Tier A, in graph.nt: every function that carries it.
+code:TierAShape a sh:NodeShape ;
+    sh:targetSubjectsOf code:cyclomatic ;
+    sh:property [ sh:path code:statementCount ; sh:minCount 1 ; sh:datatype xsd:integer ] ,
+                [ sh:path code:cyclomatic ; sh:minCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ] ,
+                [ sh:path code:cognitive ; sh:minCount 1 ; sh:datatype xsd:integer ] ,
+                [ sh:path code:maxNesting ; sh:minCount 1 ; sh:datatype xsd:integer ] ,
+                [ sh:path code:loopCount ; sh:minCount 1 ; sh:datatype xsd:integer ] ,
+                [ sh:path code:maxLoopNesting ; sh:minCount 1 ; sh:datatype xsd:integer ] ,
+                [ sh:path code:selfCalls ; sh:minCount 1 ; sh:datatype xsd:integer ] ,
+                [ sh:path code:definitionSha256 ; sh:datatype xsd:string ; sh:pattern "^[0-9a-f]{64}$" ] .
+
+code:MacroLinkShape a sh:NodeShape ;
+    sh:targetSubjectsOf code:resolvesTo ;
+    sh:property [ sh:path code:resolvesTo ; sh:minCount 1 ; sh:nodeKind sh:IRI ] .
+
+code:CostEntryShape a sh:NodeShape ;
+    sh:targetClass code:CostEntry ;
+    sh:property [ sh:path code:language ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "c" "rust" "python" "javascript" "typescript" ) ] ,
+                [ sh:path code:operation ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+                [ sh:path code:receiverType ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+                [ sh:path code:worstClass ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( code:O1 code:OLogN code:ON code:ONLogN code:ON2 code:ON3 ) ] ,
+                [ sh:path code:averageClass ; sh:maxCount 1 ; sh:in ( code:O1 code:OLogN code:ON code:ONLogN code:ON2 code:ON3 ) ] ,
+                [ sh:path code:amortizedClass ; sh:maxCount 1 ; sh:in ( code:O1 code:OLogN code:ON code:ONLogN code:ON2 code:ON3 ) ] ,
+                [ sh:path code:sizeOf ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+                [ sh:path code:iterates ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+                [ sh:path code:source ; sh:minCount 1 ; sh:datatype xsd:string ] .
+
+code:SizeCapShape a sh:NodeShape ;
+    sh:targetClass code:SizeCap ;
+    sh:property [ sh:path code:sizeName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+                [ sh:path code:cappedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+
+# The closed sets: every member is named.
+code:GrowthClassShape a sh:NodeShape ; sh:targetClass code:GrowthClass ; sh:property [ sh:path rdfs:label ; sh:minCount 1 ] .
+code:BlockReasonShape a sh:NodeShape ; sh:targetClass code:BlockReason ; sh:property [ sh:path rdfs:label ; sh:minCount 1 ] .
+code:AssumptionKindShape a sh:NodeShape ; sh:targetClass code:AssumptionKind ; sh:property [ sh:path rdfs:label ; sh:minCount 1 ] .
+code:BoundClassShape a sh:NodeShape ; sh:targetClass code:BoundClass ; sh:property [ sh:path rdfs:label ; sh:minCount 1 ] .
+code:FindingKindShape a sh:NodeShape ; sh:targetClass code:FindingKind ; sh:property [ sh:path rdfs:label ; sh:minCount 1 ] .

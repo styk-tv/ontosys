@@ -104,7 +104,20 @@ struct ParsedMacro {
 
 fn parse_macro(mb: &MacroBody) -> Option<ParsedMacro> {
     use tree_sitter::Parser;
-    let src = format!("void __m(void) {{ {} ; }}\n", mb.text);
+    // `#x` (stringify) and `a##b` (paste) are preprocessor syntax, not C.
+    // A backslash before a line break (kept by the extractor, possibly with
+    // the break collapsed to a space) only continues the definition.
+    let mut body = String::with_capacity(mb.text.len());
+    let mut chars = mb.text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' && chars.peek().is_none_or(|n| n.is_whitespace()) {
+            body.push(' ');
+        } else {
+            body.push(c);
+        }
+    }
+    let body = body.replace("##", "").replace('#', "");
+    let src = format!("void __m(void) {{ {} ; }}\n", body);
     let mut p = Parser::new();
     p.set_language(&Grammar::C.language()?).ok()?;
     let tree = p.parse(&src, None)?;
@@ -209,8 +222,8 @@ impl<'a> Env<'a> {
             let e = self.estimate_body(None, &pm.name, Grammar::C, &pm.tier_a, &pm.loops, &targets);
             let assumptions = e
                 .assumptions
-                .iter()
-                .flat_map(|(k, v)| v.iter().map(move |t| (*k, t.clone())))
+                .keys()
+                .map(|k| (*k, format!("via macro {}", pm.name)))
                 .collect();
             e.upper.map(|u| {
                 (
@@ -223,6 +236,12 @@ impl<'a> Env<'a> {
         });
         self.parsed.insert(iri.to_string(), parsed);
         self.in_progress.remove(iri);
+        if result.is_none() {
+            tracing::debug!(
+                macro_iri = iri,
+                "no cost derived for macro (unparsable, or its body is blocked)"
+            );
+        }
         self.macro_cost.insert(iri.to_string(), result.clone());
         result
     }
@@ -266,16 +285,10 @@ impl<'a> Env<'a> {
                     Some(e) if e.upper.is_some() => {
                         out.upper = e.upper;
                         out.lower = e.lower;
-                        out.sizes = e
-                            .size_expressions
-                            .iter()
-                            .map(|s| format!("{}: {s}", self.m.fns[*j].name))
-                            .collect();
-                        out.assumptions.extend(
-                            e.assumptions
-                                .iter()
-                                .flat_map(|(k, v)| v.iter().map(move |t| (*k, t.clone()))),
-                        );
+                        let callee = &self.m.fns[*j].name;
+                        out.sizes = callee_sizes(callee, e.size_expressions.iter());
+                        out.assumptions
+                            .extend(e.assumptions.keys().map(|k| (*k, format!("via {callee}"))));
                     }
                     _ => block(
                         &mut out,
@@ -296,8 +309,7 @@ impl<'a> Env<'a> {
                         Some((u, l, sizes, assumptions)) => {
                             upper = upper.map(|x| x.max(u));
                             lower = Some(lower.map_or(l, |x| min_cost(x, l)));
-                            out.sizes
-                                .extend(sizes.into_iter().map(|s| format!("{}: {s}", c.callee)));
+                            out.sizes.extend(callee_sizes(&c.callee, sizes.iter()));
                             out.assumptions.extend(assumptions);
                         }
                         None => upper = None,
@@ -634,6 +646,11 @@ impl<'a> Env<'a> {
                 }),
             }
         }
+        // One blocker per blocking construct: a name called a thousand times
+        // is one reason, at its first line.
+        let mut seen = HashSet::new();
+        e.blockers
+            .retain(|b| seen.insert((b.reason, b.text.clone(), b.callee)));
         if e.blockers.is_empty() && known {
             e.upper = Some(upper);
             e.lower = min_cost(lower, upper);
@@ -643,6 +660,21 @@ impl<'a> Env<'a> {
         }
         e
     }
+}
+
+/// A callee's sizes as its caller sees them: its own direct sizes, named
+/// after it, or just its name when its sizes come from further down.
+fn callee_sizes<'s>(callee: &str, sizes: impl Iterator<Item = &'s String>) -> Vec<String> {
+    let (direct, deeper): (Vec<&String>, Vec<&String>) =
+        sizes.partition(|s| !s.contains(": ") && !s.starts_with("via "));
+    let mut out: Vec<String> = direct
+        .into_iter()
+        .map(|s| format!("{callee}: {s}"))
+        .collect();
+    if !deeper.is_empty() {
+        out.push(format!("via {callee}"));
+    }
+    out
 }
 
 /// Whether a size expression names a capped size; the cap's wording.
@@ -843,6 +875,64 @@ fn merge_defs(mut defs: Vec<Estimate>) -> Estimate {
         Basis::ExactShape
     };
     out
+}
+
+/// The unlock list: for every uncatalogued name, how many functions it
+/// alone keeps without an upper bound, following blocked callees back to
+/// their root causes. The `top` names by count, ties by name.
+pub fn unlock(m: &Model, est: &[Estimate], top: usize) -> Vec<(String, usize)> {
+    let n = m.fns.len();
+    let mut roots: Vec<Option<BTreeSet<(Reason, String)>>> = vec![None; n];
+    for start in 0..n {
+        if est[start].upper.is_some() || roots[start].is_some() {
+            continue;
+        }
+        // Iterative post-order over blocked callees.
+        let mut stack = vec![(start, false)];
+        let mut on_path = HashSet::new();
+        while let Some((i, expanded)) = stack.pop() {
+            if roots[i].is_some() {
+                continue;
+            }
+            if !expanded {
+                on_path.insert(i);
+                stack.push((i, true));
+                for b in &est[i].blockers {
+                    if let (Reason::BlockedCallee, Some(j)) = (b.reason, b.callee) {
+                        if roots[j].is_none() && !on_path.contains(&j) {
+                            stack.push((j, false));
+                        }
+                    }
+                }
+                continue;
+            }
+            on_path.remove(&i);
+            let mut r = BTreeSet::new();
+            for b in &est[i].blockers {
+                match (b.reason, b.callee) {
+                    (Reason::BlockedCallee, Some(j)) => {
+                        if let Some(rj) = &roots[j] {
+                            r.extend(rj.iter().cloned());
+                        }
+                    }
+                    (reason, _) => {
+                        r.insert((reason, b.text.clone()));
+                    }
+                }
+            }
+            roots[i] = Some(r);
+        }
+    }
+    let mut count: BTreeMap<String, usize> = BTreeMap::new();
+    for r in roots.iter().flatten() {
+        if let [(Reason::UncostedCall, name)] = r.iter().collect::<Vec<_>>().as_slice() {
+            *count.entry(name.clone()).or_default() += 1;
+        }
+    }
+    let mut v: Vec<(String, usize)> = count.into_iter().collect();
+    v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    v.truncate(top);
+    v
 }
 
 #[cfg(test)]
@@ -1167,6 +1257,121 @@ mod tests {
             .blockers
             .iter()
             .any(|b| b.reason == UnstructuredFlow));
+    }
+
+    #[test]
+    fn unlock_list_follows_blocked_callees_to_roots() {
+        use crate::lang_c::{extract, new_parser, rdf as crdf};
+        let src = "int b(int n) { return foo(n); }\nint a(int n) { return b(n); }\nint c(int n) { return foo(n); }\nint d(int n) { return foo(n) + bar(n); }\nint z(int n) { return baz(n); }\n";
+        let files = vec![extract(&mut new_parser(), "f.c", src, None)];
+        let ix = crdf::index("p", &files);
+        let m = model_from_c("p", &files, &ix);
+        let (_, cycles) = tier_b(&m);
+        let est = estimate_all(&m, &cycles, &shipped(), &[]);
+        let list = unlock(&m, &est, 10);
+        assert_eq!(
+            list,
+            vec![("foo".to_string(), 3), ("baz".to_string(), 1)],
+            "d needs foo and bar, so neither alone unlocks it"
+        );
+    }
+
+    #[test]
+    fn macros_with_stringify_and_paste_are_derived() {
+        let est = c_estimates("#define CHECK(c) do { if (!(c)) fail(#c, __LINE__); } while (0)\n#define CAT(a, b) a##b\nvoid fail(const char *s, int l) { }\nint f(int x) { CHECK(x > 0); return x; }\n");
+        assert_eq!(
+            est["f"].upper.map(|c| c.class().0),
+            Some(O1),
+            "{:?}",
+            est["f"].blockers
+        );
+    }
+
+    #[test]
+    fn an_ambiguous_c_name_is_costed_over_its_candidates() {
+        use crate::lang_c::{extract, new_parser, rdf as crdf};
+        let files = vec![
+            extract(
+                &mut new_parser(),
+                "backend/mem.c",
+                "void release(void *p) { }\n",
+                None,
+            ),
+            extract(
+                &mut new_parser(),
+                "frontend/mem.c",
+                "void release(void *p) { }\n",
+                None,
+            ),
+            extract(
+                &mut new_parser(),
+                "ext/use.c",
+                "void use(void *p) { release(p); }\n",
+                None,
+            ),
+        ];
+        let ix = crdf::index("p", &files);
+        let m = model_from_c("p", &files, &ix);
+        let (_, cycles) = tier_b(&m);
+        let est = by_name(&m, estimate_all(&m, &cycles, &shipped(), &[]));
+        assert_eq!(est["use"].upper.map(|c| c.class().0), Some(O1));
+        assert!(
+            est["use"]
+                .assumptions
+                .contains_key(&Assumption::BuiltinReceiver),
+            "the choice of candidate is recorded"
+        );
+    }
+
+    #[test]
+    fn callee_detail_does_not_snowball_up_the_call_chain() {
+        let mut src = String::from("int f0(int *a, int n) { int s = 0; for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) s += a[j]; return s; }\n");
+        for k in 1..30 {
+            src.push_str(&format!(
+                "int f{k}(int *a, int n) {{ return f{}(a, n) + f{}(a, n); }}\n",
+                k - 1,
+                k - 1
+            ));
+        }
+        let est = c_estimates(&src);
+        let top = &est["f29"];
+        assert!(
+            top.size_expressions.len() <= 4,
+            "{:?}",
+            top.size_expressions
+        );
+        assert!(
+            top.size_expressions
+                .iter()
+                .all(|s| s.matches(": ").count() <= 1),
+            "a callee is named once, not its whole chain: {:?}",
+            top.size_expressions
+        );
+        assert!(
+            top.assumptions.values().map(|v| v.len()).sum::<usize>() <= 4,
+            "{:?}",
+            top.assumptions
+        );
+        assert_eq!(top.upper.map(|c| c.class().0), Some(ON2));
+    }
+
+    #[test]
+    fn multi_line_macros_are_derived() {
+        let est = c_estimates("#define CHECK(c) \\\n\tdo { \\\n\t\tif (!(c)) \\\n\t\t\tfail(#c); \\\n\t} while (0)\nvoid fail(const char *s) { }\nint f(int x) { CHECK(x > 0); return x; }\n");
+        assert_eq!(
+            est["f"].upper.map(|c| c.class().0),
+            Some(O1),
+            "{:?}",
+            est["f"].blockers
+        );
+    }
+
+    #[test]
+    fn a_construct_repeated_is_one_blocker() {
+        let est =
+            c_estimates("int f(int n) { return frob(n) + frob(n + 1) + frob(n + 2) + zap(n); }\n");
+        let texts: Vec<&str> = est["f"].blockers.iter().map(|b| b.text.as_str()).collect();
+        assert_eq!(texts, vec!["frob", "zap"]);
     }
 
     #[test]

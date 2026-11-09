@@ -144,10 +144,25 @@ pub fn model_from_c(
                         .and_then(|d| m.index_of(d.iri.as_str()))
                     {
                         Some(j) => Target::Repo(j),
-                        None => match macros.get(c.callee.as_str()) {
-                            Some(v) => Target::Macro(v.clone()),
-                            None => Target::External(c.callee.clone()),
-                        },
+                        None => {
+                            // Several visible definitions and no rule to pick one.
+                            let visible: Vec<usize> = ix
+                                .functions
+                                .get(&c.callee)
+                                .into_iter()
+                                .flatten()
+                                .filter(|d| !d.is_static || d.path == file)
+                                .filter_map(|d| m.index_of(d.iri.as_str()))
+                                .collect();
+                            if !visible.is_empty() {
+                                Target::Ambiguous(visible)
+                            } else {
+                                match macros.get(c.callee.as_str()) {
+                                    Some(v) => Target::Macro(v.clone()),
+                                    None => Target::External(c.callee.clone()),
+                                }
+                            }
+                        }
                     },
                     _ => Target::Indirect,
                 })

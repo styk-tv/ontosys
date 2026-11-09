@@ -105,6 +105,150 @@ pub fn tier_b_triples(
     }
 }
 
+/// Tier C in complexity.nt: per function an estimate, its loops, blockers
+/// and findings, every node typed in the file itself.
+pub fn tier_c_triples(
+    m: &super::model::Model,
+    est: &[super::estimate::Estimate],
+    findings: &[Vec<super::findings::Finding>],
+    catalog_version: &str,
+    out: &mut TripleSet,
+) {
+    use super::cost::GrowthClass;
+    use super::estimate::Basis;
+    use super::loops::BoundClass;
+    let class = |c: GrowthClass| match c {
+        GrowthClass::ONK(_) => OC.iri("ONK"),
+        GrowthClass::OExp(_) => OC.iri("OExp"),
+        other => OC.iri(&format!("{other:?}")),
+    };
+    let lit = |s: &str| Literal::string(clip(s));
+    for (i, f) in m.fns.iter().enumerate() {
+        let (fi, e) = (&f.iri, &est[i]);
+        let ei = Iri::new(format!("{}/estimate", fi.as_str()));
+        put(out, &ei, "estimates", fi.clone().into());
+        let basis = match e.basis {
+            Basis::ExactShape => "exact-shape",
+            Basis::Partial => "partial",
+            Basis::Unknown => "unknown",
+        };
+        put(out, &ei, "basis", Literal::string(basis).into());
+        put(
+            out,
+            &ei,
+            "catalogVersion",
+            Literal::string(catalog_version).into(),
+        );
+        if let Some(u) = e.upper {
+            let (c, exact) = u.class();
+            put(out, &ei, "upperClass", class(c).into());
+            put(out, &ei, "degree", int(u.degree as usize).into());
+            if let GrowthClass::OExp(b) = c {
+                put(out, &ei, "base", int(b as usize).into());
+            }
+            if let Some(x) = exact {
+                put(out, &ei, "exactForm", Literal::string(x).into());
+            }
+        }
+        put(out, &ei, "lowerClass", class(e.lower.class().0).into());
+        for sz in &e.size_expressions {
+            put(out, &ei, "sizeExpression", lit(sz).into());
+        }
+        for r in e
+            .blockers
+            .iter()
+            .map(|b| b.reason)
+            .collect::<std::collections::BTreeSet<_>>()
+        {
+            put(out, &ei, "blockedBy", OC.iri(&format!("{r:?}")).into());
+        }
+        for (k, texts) in &e.assumptions {
+            put(
+                out,
+                &ei,
+                "assumes",
+                OC.iri(&format!("{k:?}Assumption")).into(),
+            );
+            for t in texts {
+                put(out, &ei, "assumptionText", lit(t).into());
+            }
+        }
+        let mut n = 0;
+        for d in &f.defs {
+            for l in &d.loops {
+                n += 1;
+                let li = Iri::new(format!("{}/loop/{n}", fi.as_str()));
+                put(out, &li, "inFunction", fi.clone().into());
+                put(out, &li, "startLine", int(l.site.line).into());
+                put(out, &li, "loopDepth", int(l.site.depth as usize).into());
+                let bc = match l.class {
+                    BoundClass::Constant => "ConstantBound",
+                    BoundClass::Size => "SizeBound",
+                    BoundClass::Sentinel => "SentinelBound",
+                    BoundClass::Halving => "HalvingBound",
+                    BoundClass::Unbounded => "Unbounded",
+                    BoundClass::Unknown => "UnknownBound",
+                };
+                put(out, &li, "boundClass", OC.iri(bc).into());
+                if !l.bound_expression.is_empty() {
+                    put(out, &li, "boundExpression", lit(&l.bound_expression).into());
+                }
+                out.add(Triple::type_of(li, OC.iri("Loop")));
+            }
+        }
+        for (k, b) in e.blockers.iter().enumerate() {
+            let bi = Iri::new(format!("{}/blocker/{}", fi.as_str(), k + 1));
+            put(
+                out,
+                &bi,
+                "reason",
+                OC.iri(&format!("{:?}", b.reason)).into(),
+            );
+            if b.line > 0 {
+                put(out, &bi, "startLine", int(b.line).into());
+            }
+            if !b.text.is_empty() {
+                put(out, &bi, "blockerText", lit(&b.text).into());
+            }
+            if let Some(j) = b.callee {
+                put(out, &bi, "blockedCallee", m.fns[j].iri.clone().into());
+            }
+            out.add(Triple::type_of(bi, OC.iri("Blocker")));
+        }
+        for (k, fd) in findings.get(i).into_iter().flatten().enumerate() {
+            let di = Iri::new(format!("{}/finding/{}", fi.as_str(), k + 1));
+            out.add(Triple::new(
+                di.clone(),
+                OC.iri("findingKind"),
+                OC.iri(&format!("{:?}", fd.kind)),
+            ));
+            out.add(Triple::new(di.clone(), OC.iri("startLine"), int(fd.line)));
+            out.add(Triple::new(
+                di.clone(),
+                OC.iri("evidenceText"),
+                lit(&fd.text),
+            ));
+            out.add(Triple::new(di.clone(), OC.iri("inFunction"), fi.clone()));
+            out.add(Triple::type_of(di, OC.iri("Finding")));
+        }
+        out.add(Triple::type_of(ei, OC.iri("GrowthEstimate")));
+    }
+}
+
+fn put(out: &mut TripleSet, s: &Iri, local: &str, o: crate::ontology::Term) {
+    out.add(Triple::new(s.clone(), OC.iri(local), o));
+}
+
+/// At most 200 characters, cut on a char boundary, whitespace collapsed.
+fn clip(s: &str) -> String {
+    s.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(200)
+        .collect()
+}
+
 /// Tier A facts of one function, on its IRI.
 pub fn tier_a_triples(subject: &Iri, a: &TierA, sha: Option<&str>, out: &mut TripleSet) {
     let mut add = |local: &str, v: Literal| out.add(Triple::new(subject.clone(), OC.iri(local), v));
@@ -285,6 +429,204 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    fn fixture_c_model() -> (
+        super::super::model::Model,
+        Vec<super::super::estimate::Estimate>,
+        Vec<Vec<super::super::findings::Finding>>,
+    ) {
+        use crate::complexity::{catalog::shipped, estimate, findings, model, tier_b};
+        let files = vec![crate::lang_c::extract(
+            &mut crate::lang_c::new_parser(),
+            "f.c",
+            include_str!("../../tests/fixtures/complexity/fixtures.c"),
+            None,
+        )];
+        let ix = crate::lang_c::rdf::index("p", &files);
+        let m = model::model_from_c("p", &files, &ix);
+        let (_, cycles) = tier_b::tier_b(&m);
+        let cat = shipped();
+        let est = estimate::estimate_all(&m, &cycles, &cat, &estimate::macro_bodies("p", &files));
+        let found = m
+            .fns
+            .iter()
+            .map(|f| {
+                f.defs
+                    .iter()
+                    .flat_map(|d| findings::findings(d, &d.evidence, &cat, f.grammar, &f.name))
+                    .collect()
+            })
+            .collect();
+        (m, est, found)
+    }
+
+    fn emitted(
+        m: &super::super::model::Model,
+        est: &[super::super::estimate::Estimate],
+        found: &[Vec<super::super::findings::Finding>],
+    ) -> String {
+        let mut out = TripleSet::new();
+        tier_c_triples(m, est, found, "v0", &mut out);
+        out.canonicalize();
+        out.to_ntriples()
+    }
+
+    #[test]
+    fn estimate_triples_round_trip_for_each_basis() {
+        let (m, est, found) = fixture_c_model();
+        let nt = emitted(&m, &est, &found);
+        let iri = |name: &str| {
+            m.fns
+                .iter()
+                .find(|f| f.name == name)
+                .unwrap()
+                .iri
+                .as_str()
+                .to_string()
+        };
+        let has = |s: &str, local: &str, o: &str| nt.contains(&format!("<{s}> <{OC}{local}> {o}"));
+        let sum = format!("{}/estimate", iri("sum"));
+        assert!(has(&sum, "estimates", &format!("<{}>", iri("sum"))));
+        assert!(has(&sum, "upperClass", &format!("<{OC}ON>")));
+        assert!(has(&sum, "lowerClass", &format!("<{OC}ON>")));
+        assert!(has(&sum, "basis", "\"exact-shape\""));
+        assert!(has(&sum, "assumes", &format!("<{OC}LoopShapeAssumption>")));
+        assert!(has(&sum, "catalogVersion", "\"v0\""));
+        let fib = format!("{}/estimate", iri("fib"));
+        assert!(
+            has(&fib, "upperClass", &format!("<{OC}OExp>"))
+                && has(
+                    &fib,
+                    "base",
+                    "\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>"
+                )
+        );
+        let sorts = format!("{}/estimate", iri("sorts"));
+        assert!(has(
+            &sorts,
+            "degree",
+            "\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>"
+        ));
+        let loop1 = format!("{}/loop/1", iri("sum"));
+        assert!(
+            has(&loop1, "boundClass", &format!("<{OC}SizeBound>"))
+                && has(&loop1, "boundExpression", "\"n\"")
+        );
+        assert!(has(&loop1, "inFunction", &format!("<{}>", iri("sum"))));
+        let p = format!("{}/blocker/1", iri("p"));
+        assert!(
+            has(&p, "reason", &format!("<{OC}BlockedCallee>"))
+                && has(&p, "blockedCallee", &format!("<{}>", iri("u")))
+        );
+        let f1 = format!("{}/finding/1", iri("count_a"));
+        assert!(
+            has(
+                &f1,
+                "findingKind",
+                &format!("<{OC}LinearCallInLoopCondition>")
+            ),
+            "{nt}"
+        );
+        assert!(crate::ontology::strict_violations(&nt).is_empty());
+    }
+
+    #[test]
+    fn upper_class_absent_when_partial() {
+        let (m, est, found) = fixture_c_model();
+        let nt = emitted(&m, &est, &found);
+        let grow = format!(
+            "{}/estimate",
+            m.fns
+                .iter()
+                .find(|f| f.name == "grow")
+                .unwrap()
+                .iri
+                .as_str()
+        );
+        assert!(nt.contains(&format!("<{grow}> <{OC}basis> \"partial\"")));
+        assert!(nt.contains(&format!("<{grow}> <{OC}blockedBy> <{OC}DataDependentLoop>")));
+        assert!(!nt.contains(&format!("<{grow}> <{OC}upperClass>")));
+    }
+
+    #[test]
+    fn long_multibyte_bound_expression_is_cut_on_a_char_boundary() {
+        let long = format!("x < {}", "é中😀".repeat(120));
+        let src =
+            format!("def f(xs):\n    i = 0\n    while i < len(\"{long}\"):\n        i += 1\n");
+        let facts = crate::complexity::scan::scan_file(
+            "f.py",
+            src.as_bytes(),
+            crate::complexity::Grammar::Python,
+        )
+        .0;
+        let mut m = super::super::model::Model::default();
+        super::super::model::model_add_scanned(
+            &mut m,
+            facts
+                .into_iter()
+                .map(|f| (Iri::new("urn:t:f"), f))
+                .collect(),
+        );
+        let (_, cycles) = super::super::tier_b::tier_b(&m);
+        let est = super::super::estimate::estimate_all(
+            &m,
+            &cycles,
+            &crate::complexity::catalog::shipped(),
+            &[],
+        );
+        let nt = emitted(&m, &est, &[vec![]]);
+        assert!(crate::ontology::strict_violations(&nt).is_empty(), "{nt}");
+        for line in nt.lines().filter(|l| l.contains("boundExpression")) {
+            let lit = line.split('"').nth(1).unwrap();
+            assert!(lit.chars().count() <= 200, "{}", lit.chars().count());
+        }
+    }
+
+    #[test]
+    fn complexity_nt_deterministic_on_fixture_tree() {
+        let (m, est, found) = fixture_c_model();
+        let (m2, est2, found2) = fixture_c_model();
+        assert_eq!(emitted(&m, &est, &found), emitted(&m2, &est2, &found2));
+    }
+
+    #[test]
+    fn shapes_target_only_nodes_typed_in_complexity_nt() {
+        let ttl = include_str!("../../ontology/code.ttl");
+        let mut targets = BTreeSet::new();
+        for q in RdfParser::from_format(RdfFormat::Turtle).for_slice(ttl.as_bytes()) {
+            let q = q.unwrap();
+            if q.predicate.as_str() == "http://www.w3.org/ns/shacl#targetClass" {
+                if let Term::NamedNode(o) = &q.object {
+                    targets.insert(o.as_str().to_string());
+                }
+            }
+        }
+        assert!(!targets.is_empty(), "code.ttl carries shapes");
+        for t in &targets {
+            assert!(t.starts_with(OC), "{t}: a shape on a class typed in graph.nt would be vacuous or refused on complexity.nt");
+        }
+        for class in [
+            "AnalysedFunction",
+            "CallCycle",
+            "GrowthEstimate",
+            "Loop",
+            "Blocker",
+            "Finding",
+        ] {
+            assert!(
+                targets.contains(&format!("{OC}{class}")),
+                "{class} has a shape"
+            );
+        }
+        let (m, est, found) = fixture_c_model();
+        let nt = emitted(&m, &est, &found);
+        for class in ["GrowthEstimate", "Loop", "Blocker", "Finding"] {
+            assert!(
+                nt.contains(&format!("<{RDF_TYPE}> <{OC}{class}>")),
+                "{class} nodes are typed in the file, so a shape targets something"
+            );
         }
     }
 
